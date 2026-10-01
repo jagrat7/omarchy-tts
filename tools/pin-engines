@@ -27,11 +27,16 @@ case "${1:-}" in
     # lib/engines/wheels is a flat index of reviewed wheels for dependencies
     # that publish none; with --only-binary it is the only candidate uv can
     # take, so the lock records the reviewed wheel's hash and nothing else.
-    for engine in piper kokoro easyocr; do
+    for engine in piper kokoro kokoro_onnx kokoro_onnx_gpu easyocr; do
+      # kokoro-onnx depends on the CPU onnxruntime wheel, which ships the same
+      # `onnxruntime` module as onnxruntime-gpu. Installing both lets either
+      # one win, so the GPU closure leaves the CPU wheel out.
+      extra=()
+      [[ "$engine" == kokoro_onnx_gpu ]] && extra=(--no-emit-package onnxruntime)
       uv pip compile --quiet --generate-hashes --only-binary :all: --python-version 3.12 \
         --find-links "$spec/wheels" \
         --python-platform x86_64-unknown-linux-gnu --no-header --no-annotate \
-        --exclude-newer "$exclude_newer" \
+        --exclude-newer "$exclude_newer" "${extra[@]}" \
         "$spec/$engine.in" -o "$spec/$engine.lock"
       printf '%s: %s requirements, %s hashes\n' "$engine" \
         "$(grep -c '==\|@ ' "$spec/$engine.lock")" "$(grep -c 'sha256:' "$spec/$engine.lock")"

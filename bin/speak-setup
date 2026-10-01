@@ -56,7 +56,8 @@ ENGINE_SPECS = PLUGIN / "lib" / "engines"
 # build backend uv resolves unhashed from the index. Such packages are
 # instead shipped as reviewed wheels under lib/engines/wheels, built
 # reproducibly from the hash-verified sdist (see DEVELOPMENT.md).
-ENGINE_LOCKS = {name: ENGINE_SPECS / f"{name}.lock" for name in ("piper", "kokoro", "easyocr")}
+ENGINE_LOCKS = {name: ENGINE_SPECS / f"{name}.lock"
+                for name in ("piper", "kokoro", "kokoro_onnx", "kokoro_onnx_gpu", "easyocr")}
 MODEL_MANIFEST = ENGINE_SPECS / "models.json"
 LOCK_STAMP = ".lock-sha256"
 ENGINE_PYTHON = "3.12"
@@ -480,6 +481,34 @@ def install_kokoro_models(models: Path) -> None:
                        dest, entry["sha256"], entry["size"])
 
 
+def install_kokoro_onnx_models(models: Path) -> None:
+    """Fetch the Kokoro ONNX model and voice pack, each verified against its
+    shipped digest. The CPU and GPU engines load identical files, so a copy
+    the other engine already verified is hard-linked instead of downloaded
+    again, and checked against the same digest before it is kept."""
+    files = model_manifest().get("kokoro_onnx", {}).get("files", {})
+    if not files:
+        raise RuntimeError("The model manifest has no usable Kokoro ONNX entry")
+    models.mkdir(parents=True, exist_ok=True)
+    for name, entry in files.items():
+        if not re.fullmatch(r"[A-Za-z0-9._-]+\.(onnx|bin)", name):
+            raise RuntimeError(f"Refusing model file with an unexpected name: {name}")
+        dest = models / name
+        for sibling in ("kokoro_onnx", "kokoro_onnx_gpu"):
+            existing = ENGINE / sibling / "models" / name
+            if existing.is_symlink() or not existing.is_file():
+                continue
+            try:
+                os.link(existing, dest)
+            except OSError:
+                continue
+            if dest.stat().st_size == entry["size"] and sha256_file(dest) == entry["sha256"]:
+                break
+            dest.unlink(missing_ok=True)
+        else:
+            fetch_verified(entry["url"], dest, entry["sha256"], entry["size"])
+
+
 def create_venv(uv: str, target: Path, python_version: str | None = None) -> None:
     """Create a fresh managed environment at a private staging path."""
     if target.exists() or target.is_symlink():
@@ -582,6 +611,30 @@ def build_kokoro(target: Path) -> None:
 
 
 
+def build_kokoro_onnx(target: Path, *, gpu: bool = False) -> None:
+    engine = "kokoro_onnx_gpu" if gpu else "kokoro_onnx"
+    uv = ensure_uv()
+    write_state("running", "engine", 20,
+                "Installing Kokoro ONNX with GPU support (about 2.3 GB)" if gpu
+                else "Installing the Kokoro ONNX speech engine")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    create_venv(uv, target, ENGINE_PYTHON)
+    sync_locked(uv, str(target / "bin/python"), engine)
+    write_state("running", "engine", 70, "Downloading and verifying the Kokoro ONNX model and voices")
+    install_kokoro_onnx_models(target / "models")
+
+
+def kokoro_onnx_engine() -> str:
+    """The configured device decides which Kokoro ONNX engine an install
+    builds: the small CPU runtime, or the CUDA runtime with its libraries."""
+    try:
+        config = json.loads((CONFIG_HOME / "omarchy-tts" / "config.json").read_text())
+        device = config.get("kokoro_onnx", {}).get("device")
+    except (OSError, ValueError, AttributeError):
+        device = None
+    return "kokoro_onnx_gpu" if device == "gpu" else "kokoro_onnx"
+
+
 def build_easyocr(target: Path) -> None:
     uv = ensure_uv()
     write_state("running", "engine", 20, "Installing the EasyOCR engine (this is large)")
@@ -604,7 +657,7 @@ def prove(target: str) -> None:
     """
     if target.startswith(LANGUAGE_PREFIX):
         return          # a language pack has no speech of its own to prove
-    provider = {"recommended": "piper"}.get(target, target)
+    provider = {"recommended": "piper", "kokoro_onnx_gpu": "kokoro_onnx"}.get(target, target)
     speak = Path(__file__).resolve().parent / "speak"
     if not speak.exists():
         return
@@ -785,6 +838,11 @@ def worker(target: str) -> int:
                                            after_activate=install_voice)
             elif target == "kokoro":
                 install_engine_transaction("kokoro", build_kokoro)
+            elif target == "kokoro_onnx":
+                engine = kokoro_onnx_engine()
+                install_engine_transaction(
+                    engine, lambda staging: build_kokoro_onnx(
+                        staging, gpu=engine == "kokoro_onnx_gpu"))
             elif target == "easyocr":
                 install_engine_transaction("easyocr", build_easyocr)
             elif target.startswith(LANGUAGE_PREFIX):
@@ -816,7 +874,7 @@ def start(target: str) -> None:
         except RuntimeError as exc:
             emit(ok=False, code="unknown_target", message=str(exc))
             return
-    elif target not in {"recommended", "piper", "kokoro", *OCR_ENGINES}:
+    elif target not in {"recommended", "piper", "kokoro", "kokoro_onnx", *OCR_ENGINES}:
         emit(ok=False, code="unknown_target", message="Unknown installation target")
         return
     try:

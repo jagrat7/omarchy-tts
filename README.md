@@ -1,5 +1,10 @@
 # Omarchy TTS
 
+> **Fork of [hikari112/omarchy-tts](https://github.com/hikari112/omarchy-tts)**
+> adding a fast Kokoro ONNX provider, a CPU/GPU choice for Kokoro, and a fix
+> for false shortcut conflicts on Lua-configured Hyprland. See
+> [CHANGELOG.md](CHANGELOG.md) under 1.4.0.
+
 [![CI](https://github.com/hikari112/omarchy-tts/actions/workflows/ci.yml/badge.svg)](https://github.com/hikari112/omarchy-tts/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Omarchy](https://img.shields.io/badge/Omarchy-Quattro-f97316.svg)](https://omarchy.org/)
@@ -43,7 +48,7 @@ navigation, control semantics, or Braille support.
 ## Install
 
 ```bash
-omarchy plugin add https://github.com/hikari112/omarchy-tts.git --enable
+omarchy plugin add https://github.com/jagrat7/omarchy-tts.git --enable
 ```
 
 Click the speaker in the bar. The welcome screen installs the recommended
@@ -248,7 +253,8 @@ Bundled, all optional except piper:
 | Provider | Kind | Notes |
 |----------|------|-------|
 | `piper` | local | **default** — neural, fast, ~60 MB/voice |
-| `kokoro` | local | best quality, slow cold start, opt-in |
+| `kokoro_onnx` | local | Kokoro voices on ONNX Runtime; under a second to start; **CPU** engine ~480 MB or **GPU** engine ~2.3 GB (CUDA libraries included); opt-in |
+| `kokoro` | local | Kokoro on PyTorch; ~6 GB, several seconds to start every time; CPU or GPU; opt-in |
 | `openai` | cloud | opt-in; **text leaves your machine** |
 | `elevenlabs` | cloud | opt-in; **text leaves your machine** |
 | `gemini` | cloud | opt-in; Gemini TTS, 30 named voices, speed fixed by the service; takes a Vertex AI key by default (`speak --set .gemini.api developer` for an AI Studio key); **text leaves your machine** |
@@ -258,6 +264,13 @@ Google lists well over a thousand voices. The Voice tab browses them with
 search, language, gender and family filters rather than a dropdown.
 Google requests are rejected locally above the service's 5,000-byte UTF-8
 limit, which matters for text whose characters occupy multiple bytes.
+
+Kokoro providers show a **Run on CPU / GPU** switch in the Provider tab
+(`speak --set .kokoro_onnx.device gpu`). For `kokoro_onnx` the device picks
+which engine is installed and used, so switching to GPU offers a separate
+install; the two engines share one copy of the model files. The CPU engine
+starts speaking slightly sooner on short selections; the GPU engine
+synthesises long passages several times faster.
 
 `espeak-ng` and Speech Dispatcher were removed in 1.3.0; a configuration
 that still names one is moved to Piper on first run.

@@ -451,6 +451,7 @@ voice_for_provider() { # voice_for_provider <name>
       [[ -n "$voice" ]] || voice="$(cached_remote_voices elevenlabs | jq -r '.[0].value // empty')"
       ;;
     kokoro) voice="$(cfg .kokoro.voice af_heart)" ;;
+    kokoro_onnx) voice="$(cfg .kokoro_onnx.voice af_heart)" ;;
     gemini) voice="$(cfg .gemini.voice Kore)" ;;
     google)
       voice="$(cfg .google.voice "")"
@@ -661,6 +662,7 @@ emit_info() {
              --arg install "$(meta_of "$b" install)" \
              --arg vendor "$(meta_of "$b" vendor)" \
              --arg voices "$(meta_of "$b" voices)" \
+             --arg devices "$(meta_of "$b" devices)" \
              --arg maxChars "$(meta_of "$b" maxchars)" \
              --arg maxBytes "$(meta_of "$b" maxbytes)" \
              --arg rateMin "$(meta_of "$b" ratemin)" \
@@ -686,7 +688,9 @@ emit_info() {
                maxBytes:(if $maxBytes=="" then null else (try ($maxBytes|tonumber) catch null) end),
                rateMin:(if $rateMin=="" then null else (try ($rateMin|tonumber) catch null) end),
                rateMax:(if $rateMax=="" then null else (try ($rateMax|tonumber) catch null) end),
-               voices:(if $voices=="" then "fixed" else $voices end)}'
+               voices:(if $voices=="" then "fixed" else $voices end),
+               devices:($devices | split(" ") | map(select(length>0))),
+               device:(if $devices=="" then null else ($config[$name].device // "cpu") end)}'
     done | jq -sc 'sort_by(.kind == "cloud", .status != "ready", .name)'
   )"
   local engines="[]"
@@ -746,6 +750,10 @@ emit_info() {
     kokoro)
       voice="$(voice_for_provider kokoro)"; voice_path=.kokoro.voice
       vs='["af_heart","af_bella","af_nicole","af_sarah","am_adam","am_michael","bf_emma","bf_isabella","bm_george","bm_lewis"]' ;;
+    kokoro_onnx)
+      # The English voices in the bundled v1.0 voice pack.
+      voice="$(voice_for_provider kokoro_onnx)"; voice_path=.kokoro_onnx.voice
+      vs='["af_heart","af_alloy","af_aoede","af_bella","af_jessica","af_kore","af_nicole","af_nova","af_river","af_sarah","af_sky","am_adam","am_echo","am_eric","am_fenrir","am_liam","am_michael","am_onyx","am_puck","bf_alice","bf_emma","bf_isabella","bf_lily","bm_daniel","bm_fable","bm_george","bm_lewis"]' ;;
     gemini)
       voice="$(voice_for_provider gemini)"; voice_path=.gemini.voice
       vs="$(provider_voice_options gemini)" ;;
@@ -796,6 +804,7 @@ set_config() { # validated path value; forget proof tied to the old setting
     .openai.*) health_key=openai ;;
     .elevenlabs.*) health_key=elevenlabs ;;
     .kokoro.*) health_key=kokoro ;;
+    .kokoro_onnx.*) health_key=kokoro_onnx ;;
     .gemini.*) health_key=gemini ;;
     .google.*) health_key=google ;;
     .ocr.langs) health_key=ocr:tesseract ;;

@@ -5,6 +5,23 @@ Versioning.
 
 ## Unreleased
 
+## 1.4.0 - 2026-09-30
+
+- Add the `kokoro_onnx` provider: Kokoro v1.0 on ONNX Runtime with all 27
+  English voices, streaming sentence by sentence. It starts in under a second
+  where the PyTorch provider spends several seconds importing on every
+  utterance, and needs about 480 MB instead of about 6 GB.
+- Add a per-provider device setting (`.kokoro.device`, `.kokoro_onnx.device`:
+  `cpu` or `gpu`) with a Run on CPU / GPU switch in the Provider tab. The
+  PyTorch provider moves its model to CUDA when available. `kokoro_onnx`
+  installs a separate, hash-locked CUDA engine (`kokoro_onnx_gpu.lock`) that
+  shares the verified model files with the CPU engine through hard links.
+- Model files are digest-checked once per file identity (inode, size, mtime)
+  instead of on every utterance.
+- Fix every managed shortcut being reported as a conflict on Lua-configured
+  Hyprland, where `hyprctl binds` shows `__lua` and an opaque callback id
+  instead of the command; the managed block is now recognised by its label.
+
 ## 1.3.2 - 2026-09-06
 
 - Resolve `pkexec` and `pacman` at fixed canonical paths and admit them across

@@ -316,6 +316,10 @@ def active_conflicting_chords(config: dict) -> list[str]:
     occupied = set()
     if not isinstance(active, list):
         raise RuntimeError("Hyprland returned an unreadable shortcut list")
+    # A Lua-configured Hyprland reports o.bind() shortcuts with dispatcher
+    # "__lua" and an opaque callback id as the argument, so the command is not
+    # visible. Our own block is then recognised by its label on its own chord.
+    managed_labels = {chord_signature(item["chord"]): item["label"] for item in config.values()}
     for binding in active:
         if not isinstance(binding, dict):
             continue
@@ -326,6 +330,9 @@ def active_conflicting_chords(config: dict) -> list[str]:
         signature = (modmask, str(binding.get("key", "")).upper())
         command = str(binding.get("arg", ""))
         if is_our_command(command):
+            continue
+        if (binding.get("dispatcher") == "__lua"
+                and managed_labels.get(signature) == binding.get("description")):
             continue
         legacy_action = legacy_command_action(command)
         if (legacy_action is not None

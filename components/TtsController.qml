@@ -135,6 +135,12 @@ Item {
   function speak(text) { error = ""; pendingSpeech = String(text).slice(0, 4096); speechProc.command = [speakBin, "--stdin-json"]; restart(speechProc) }
   function stop() { error = ""; speechProc.command = [speakBin, "--stop"]; restart(speechProc) }
   function selectProvider(name) { setConfig(".provider", name) }
+  // Only providers that declare `# devices:` offer this; the config layer
+  // accepts cpu or gpu for exactly those paths.
+  function setDevice(provider, device) {
+    if (["kokoro", "kokoro_onnx"].indexOf(provider) < 0 || ["cpu", "gpu"].indexOf(device) < 0) return
+    setConfig("." + provider + ".device", device)
+  }
   // Proving a backend takes seconds and makes no sound; `verifying` lets the
   // panel say so rather than appearing to have ignored the click.
   function verifyProvider(name) {
@@ -211,7 +217,7 @@ Item {
     setupStartProc.running = true
   }
   function installProvider(provider) {
-    var targets = ({ "piper": "piper", "kokoro": "kokoro", "easyocr": "easyocr" })
+    var targets = ({ "piper": "piper", "kokoro": "kokoro", "kokoro_onnx": "kokoro_onnx", "easyocr": "easyocr" })
     if (targets[provider]) startSetup(targets[provider])
   }
   function cancelSetup() { if (setupCancellable) action([setupBin, "cancel"]) }

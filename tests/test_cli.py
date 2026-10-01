@@ -798,6 +798,28 @@ class CliConfigTests(unittest.TestCase):
                                 capture_output=True, text=True, check=True)
         self.assertIn("SUPER + ALT + E", json.loads(status.stdout)["conflicts"])
 
+    def test_lua_reported_managed_bindings_are_not_conflicts(self):
+        # Lua-configured Hyprland reports o.bind() shortcuts as dispatcher
+        # "__lua" with an opaque id, so only the label identifies our block.
+        tools = Path(self.temp.name, "lua-tools")
+        tools.mkdir()
+        hyprctl = tools / "hyprctl"
+        hyprctl.write_text(
+            "#!/usr/bin/env bash\n"
+            "if [[ $1 == binds ]]; then\n"
+            "  printf '%s\\n' '[{\"modmask\":72,\"key\":\"E\",\"dispatcher\":\"__lua\",\"arg\":\"192\",\"description\":\"Speak selection\"},"
+            "{\"modmask\":72,\"key\":\"A\",\"dispatcher\":\"__lua\",\"arg\":\"193\",\"description\":\"ChatGPT\"}]'\n"
+            "else exit 0; fi\n"
+        )
+        hyprctl.chmod(0o755)
+        env = {**self.env, "PATH": f"{tools}:{self.env['PATH']}",
+               "HYPRLAND_INSTANCE_SIGNATURE": "test"}
+        status = subprocess.run([BINDINGS, "status"], env=env,
+                                capture_output=True, text=True, check=True)
+        conflicts = json.loads(status.stdout)["conflicts"]
+        self.assertNotIn("SUPER + ALT + E", conflicts)
+        self.assertIn("SUPER + ALT + A", conflicts)
+
     def test_binding_manager_fails_closed_when_active_bindings_are_unreadable(self):
         tools = Path(self.temp.name, "broken-hypr-tools")
         tools.mkdir()
@@ -1798,6 +1820,26 @@ class CliConfigTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue(marker.exists(), "a voice outside the catalogue is the user's own")
 
+    def test_device_settings_accept_only_cpu_or_gpu_for_device_providers(self):
+        self.run_speak("--set", ".kokoro_onnx.device", "gpu")
+        self.run_speak("--set", ".kokoro.device", "gpu")
+        config = json.loads(Path(self.temp.name, "omarchy-tts", "config.json").read_text())
+        self.assertEqual(config["kokoro_onnx"]["device"], "gpu")
+        self.assertEqual(config["kokoro"]["device"], "gpu")
+        for path, value in ((".kokoro_onnx.device", "tpu"), (".piper.device", "gpu"),
+                            (".kokoro_onnx.voice", "../af_heart")):
+            with self.subTest(path=path, value=value):
+                result = subprocess.run([SPEAK, "--set", path, value], env=self.env,
+                                        capture_output=True, text=True)
+                self.assertNotEqual(result.returncode, 0)
+        info = json.loads(self.run_speak("--info").stdout)
+        onnx = next(p for p in info["providers"] if p["name"] == "kokoro_onnx")
+        self.assertEqual(onnx["devices"], ["cpu", "gpu"])
+        self.assertEqual(onnx["device"], "gpu")
+        piper = next(p for p in info["providers"] if p["name"] == "piper")
+        self.assertEqual(piper["devices"], [])
+        self.assertIsNone(piper["device"])
+
     def test_model_artefacts_are_pinned_to_immutable_sources_with_digests(self):
         manifest = json.loads((ROOT / "lib" / "engines" / "models.json").read_text())
         for name, entry in manifest["easyocr"]["models"].items():
@@ -1810,8 +1852,17 @@ class CliConfigTests(unittest.TestCase):
         for path in ("config.json", "kokoro-v1_0.pth", "voices/af_heart.pt"):
             self.assertRegex(kokoro["files"][path]["sha256"], r"^[0-9a-f]{64}$", path)
         provider = (ROOT / "providers" / "kokoro").read_text()
-        for voice in re.findall(r'"(a[fm]_[a-z]+|b[fm]_[a-z]+)"', (ROOT / "bin" / "speak").read_text()):
+        speak = (ROOT / "bin" / "speak").read_text()
+        torch_voices = re.search(r"voice_path=\.kokoro\.voice\n\s*vs='([^']*)'", speak).group(1)
+        for voice in re.findall(r'"(a[fm]_[a-z]+|b[fm]_[a-z]+)"', torch_voices):
             self.assertIn(f"voices/{voice}.pt", kokoro["files"], f"bundled voice {voice} has no digest")
+        # The ONNX engine's voices all live in one pinned voice pack.
+        onnx = manifest["kokoro_onnx"]["files"]
+        self.assertEqual(set(onnx), {"kokoro-v1.0.onnx", "voices-v1.0.bin"})
+        for name, entry in onnx.items():
+            self.assertRegex(entry["url"], r"^https://github\.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1\.0/", name)
+            self.assertRegex(entry["sha256"], r"^[0-9a-f]{64}$", name)
+            self.assertGreater(entry["size"], 0)
         self.assertIn("HF_HUB_OFFLINE=1", provider)
         self.assertIn("weights_only=True", provider)
         self.assertNotIn("download_enabled=True", (ROOT / "ocr" / "easyocr").read_text())
