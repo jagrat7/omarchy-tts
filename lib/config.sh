@@ -156,7 +156,7 @@ JSON
     | .sanitizer.announceCodeBlocks = (if (.sanitizer.announceCodeBlocks|type) == "boolean" then .sanitizer.announceCodeBlocks else true end)
     | .sanitizer.stripMarkdown = (if (.sanitizer.stripMarkdown|type) == "boolean" then .sanitizer.stripMarkdown else true end)
     | .sanitizer.expandUnits = (if (.sanitizer.expandUnits|type) == "boolean" then .sanitizer.expandUnits else true end)
-    | .ui.collapsed = (if (.ui.collapsed|type) == "string" and (.ui.collapsed|test("^((local|cloud)(,(local|cloud))?)?$")) then .ui.collapsed else "" end)
+    | .ui.collapsed = (if (.ui.collapsed|type) == "string" and (.ui.collapsed|test("^(((ocr-)?(local|cloud))(,((ocr-)?(local|cloud))){0,3})?$")) then .ui.collapsed else "" end)
     | .ui.sampleText = (if (.ui.sampleText|type) == "string" then .ui.sampleText[0:4096] else "Highlight any text and press the key. This is how it sounds right now." end)
     | .rate = (if (.rate|type)=="number" and .rate>=0.25 and .rate<=4 then .rate else 1.0 end)
     | .maxChars = (if (.maxChars|type)=="number" and .maxChars>=0 and .maxChars<=1048576 then (.maxChars|floor) else 0 end)
@@ -221,7 +221,7 @@ tts_config_set_unlocked() { # jq path, JSON-or-string value
     .sanitizer.inlineCode|.sanitizer.announceCodeBlocks|.sanitizer.stripMarkdown|.sanitizer.expandUnits)
       [[ "$value" == true || "$value" == false ]] || return 3 ;;
     .ui.lastTab) [[ "$value" =~ ^[0-5]$ ]] || return 3 ;;
-    .ui.collapsed) [[ "$value" =~ ^((local|cloud)(,(local|cloud))?)?$ ]] || return 3 ;;
+    .ui.collapsed) [[ "$value" =~ ^(((ocr-)?(local|cloud))(,((ocr-)?(local|cloud))){0,3})?$ ]] || return 3 ;;
     .ui.sampleText) [[ ${#value} -le 4096 ]] || return 3 ;;
   esac
   tmp="$(mktemp "${config_file}.XXXXXX")" || return 1

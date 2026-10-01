@@ -705,29 +705,14 @@ Panel {
               MouseArea { anchors.fill: parent; enabled: parent.usable; z: 0; cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor; onClicked: parent.activateRow() }
             }
           }
-          Repeater {
-            // One collapsible group per kind. A collapsed group still shows
-            // the provider in use, so the active choice never disappears.
-            model: [{ key: "local", title: "Local", note: "Runs on this computer", rows: root.localProviders },
-                    { key: "cloud", title: "Cloud", note: "󰅟  Sends spoken text to a service", rows: root.cloudProviders }]
-            delegate: Column {
-              id: providerGroup
-              required property var modelData
-              width: parent.width; spacing: Style.space(4)
-              visible: modelData.rows.length > 0
-              Item {
-                width: parent.width; height: groupToggle.implicitHeight + Style.space(4)
-                InlineAction {
-                  id: groupToggle; anchors.left: parent.left; anchors.bottom: parent.bottom
-                  text: (root.isCollapsed(providerGroup.modelData.key) ? "󰅂 " : "󰅀 ") + providerGroup.modelData.title + " · " + providerGroup.modelData.rows.length
-                  color: root.fg; font.family: root.ff; font.pixelSize: Style.font.caption; font.bold: true
-                  Accessible.name: providerGroup.modelData.title + " providers, " + (root.isCollapsed(providerGroup.modelData.key) ? "collapsed" : "expanded")
-                  onTriggered: root.toggleCollapsed(providerGroup.modelData.key)
-                }
-                Text { anchors.right: parent.right; anchors.baseline: groupToggle.baseline; text: providerGroup.modelData.note; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
-              }
-              Repeater { model: providerGroup.modelData.rows; delegate: providerRow }
-            }
+          GroupedList {
+            // A collapsed group still shows the provider in use.
+            groups: [{ key: "local", title: "Local", note: "Runs on this computer", rows: root.localProviders },
+                     { key: "cloud", title: "Cloud", note: "󰅟  Sends spoken text to a service", rows: root.cloudProviders }]
+            rowDelegate: providerRow
+            collapsedGroups: root.collapsedGroups; itemNoun: "providers"
+            foreground: root.fg; dim: root.dim; fontFamily: root.ff
+            onToggled: function(key) { root.toggleCollapsed(key) }
           }
           EngineConfirm {
             width: parent.width
@@ -1078,11 +1063,10 @@ Panel {
           Item {
             width: parent.width; height: engineHeader.implicitHeight
             PanelSectionHeader { id: engineHeader; text: "Recognition engine"; foreground: root.fg }
-            Text { anchors.right: parent.right; text: "󰅟  Cloud engine"; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
           }
-          Repeater {
-            model: controller.info.ocr?.engines || []
-            delegate: Rectangle {
+          Component {
+            id: ocrRow
+            Rectangle {
               required property var modelData
               readonly property bool selected: modelData.name === (controller.info.ocr?.engine || "tesseract")
               readonly property bool ready: modelData.status === "ready"
@@ -1119,7 +1103,8 @@ Panel {
                   root.ocrConfirmInstall = row.modelData.install
                 }
               }
-              width: parent.width; height: engineCopy.implicitHeight + Style.space(12); radius: Style.space(6)
+              width: parent ? parent.width : 0; height: engineCopy.implicitHeight + Style.space(12); radius: Style.space(6)
+              visible: selected || !root.isCollapsed(cloud ? "ocr-cloud" : "ocr-local")
               color: selected ? root.tint(0.10) : "transparent"; border.width: selected || activeFocus ? 1 : 0; border.color: activeFocus ? Color.accent : root.tint(0.45)
               activeFocusOnTab: usable
               Accessible.role: Accessible.RadioButton
@@ -1178,6 +1163,14 @@ Panel {
               }
               MouseArea { anchors.fill: parent; enabled: parent.usable; z: 0; cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor; onClicked: parent.activateRow() }
             }
+          }
+          GroupedList {
+            groups: [{ key: "ocr-local", title: "Local", note: "Runs on this computer", rows: (controller.info.ocr?.engines || []).filter(function(e) { return e.kind !== "cloud" }) },
+                     { key: "ocr-cloud", title: "Cloud", note: "󰅟  Sends screenshots to a service", rows: (controller.info.ocr?.engines || []).filter(function(e) { return e.kind === "cloud" }) }]
+            rowDelegate: ocrRow
+            collapsedGroups: root.collapsedGroups; itemNoun: "engines"
+            foreground: root.fg; dim: root.dim; fontFamily: root.ff
+            onToggled: function(key) { root.toggleCollapsed(key) }
           }
           EngineConfirm {
             width: parent.width
