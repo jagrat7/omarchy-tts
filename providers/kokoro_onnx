@@ -2,7 +2,7 @@
 # desc: Kokoro quality, fast start. Runs on CPU or GPU.
 # title: Kokoro ONNX
 # kind: local
-# probe: d="$(jq -r '.kokoro_onnx.device // "cpu"' "$TTS_CONFIG" 2>/dev/null)"; e=kokoro_onnx; [[ "$d" == gpu ]] && e=kokoro_onnx_gpu; dir="${TTS_DATA_DIR:-$HOME/.local/share/omarchy-tts}/engines/$e"; [[ -x "$dir/bin/python" && -s "$dir/models/kokoro-v1.0.onnx" && -s "$dir/models/voices-v1.0.bin" && "$(cat "$dir/.lock-sha256" 2>/dev/null)" == "$(sha256sum "$TTS_PLUGIN_DIR/lib/engines/$e.lock" | cut -d' ' -f1)" ]]
+# probe: d="${TTS_DEVICE:-$(jq -r '.kokoro_onnx.device // "cpu"' "$TTS_CONFIG" 2>/dev/null)}"; e=kokoro_onnx; [[ "$d" == gpu ]] && e=kokoro_onnx_gpu; dir="${TTS_DATA_DIR:-$HOME/.local/share/omarchy-tts}/engines/$e"; [[ -x "$dir/bin/python" && -s "$dir/models/kokoro-v1.0.onnx" && -s "$dir/models/voices-v1.0.bin" && "$(cat "$dir/.lock-sha256" 2>/dev/null)" == "$(sha256sum "$TTS_PLUGIN_DIR/lib/engines/$e.lock" | cut -d' ' -f1)" ]]
 # install: managed Python 3.12 venv from lib/engines/kokoro_onnx.lock (CPU) or kokoro_onnx_gpu.lock (GPU) · verified model files
 # voices: bundled
 # devices: cpu gpu

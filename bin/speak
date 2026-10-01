@@ -349,11 +349,20 @@ health_set() { # health_set <provider> <ok|failed> [note] [fingerprint]
   return "$rc"
 }
 
-provider_installed() { # 0 if the probe passes
+provider_installed() { # provider executable [device]: 0 if the probe passes
   local probe; probe="$(meta_of "$1" probe)"
   [[ -z "$probe" ]] && return 0
   timeout --kill-after=1s 3s env TTS_PLUGIN_DIR="$PLUGIN_DIR" \
-    TTS_CONFIG="$CONFIG" TTS_DATA_DIR="$DATA_DIR" bash -c "$probe" >/dev/null 2>&1
+    TTS_CONFIG="$CONFIG" TTS_DATA_DIR="$DATA_DIR" TTS_DEVICE="${2:-}" \
+    bash -c "$probe" >/dev/null 2>&1
+}
+
+installed_devices() { # provider executable: JSON list of devices whose engine is present
+  local bin="$1" device
+  for device in $(meta_of "$bin" devices); do
+    [[ "$device" =~ ^(cpu|gpu)$ ]] || continue
+    provider_installed "$bin" "$device" && printf '%s\n' "$device"
+  done | jq -Rsc 'split("\n") | map(select(length>0))'
 }
 
 provider_status() { # provider executable, pre-read health, credential source
@@ -663,6 +672,7 @@ emit_info() {
              --arg vendor "$(meta_of "$b" vendor)" \
              --arg voices "$(meta_of "$b" voices)" \
              --arg devices "$(meta_of "$b" devices)" \
+             --argjson installedDevices "$(installed_devices "$b")" \
              --arg maxChars "$(meta_of "$b" maxchars)" \
              --arg maxBytes "$(meta_of "$b" maxbytes)" \
              --arg rateMin "$(meta_of "$b" ratemin)" \
@@ -690,7 +700,8 @@ emit_info() {
                rateMax:(if $rateMax=="" then null else (try ($rateMax|tonumber) catch null) end),
                voices:(if $voices=="" then "fixed" else $voices end),
                devices:($devices | split(" ") | map(select(length>0))),
-               device:(if $devices=="" then null else ($config[$name].device // "cpu") end)}'
+               device:(if $devices=="" then null else ($config[$name].device // "cpu") end),
+               installedDevices:$installedDevices}'
     done | jq -sc 'sort_by(.kind == "cloud", .status != "ready", .name)'
   )"
   local engines="[]"
@@ -792,7 +803,7 @@ emit_info() {
         announceCodeBlocks:($config.sanitizer.announceCodeBlocks // true),
         stripMarkdown:($config.sanitizer.stripMarkdown // true),
         expandUnits:($config.sanitizer.expandUnits // true)},
-      ui:{lastTab:($config.ui.lastTab // 0),
+      ui:{lastTab:($config.ui.lastTab // 0), collapsed:($config.ui.collapsed // ""),
         sampleText:($config.ui.sampleText // "Highlight any text and press the key. This is how it sounds right now.")}}'
 }
 

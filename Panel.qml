@@ -27,6 +27,48 @@ Panel {
   property string capturedChord: ""
   property string confirmInstall: ""
   property string confirmProvider: ""
+  // Set when the confirmation is for switching a provider to a device whose
+  // engine is not installed yet; Continue then switches and installs.
+  property string confirmDevice: ""
+  readonly property var localProviders: (controller.info.providers || []).filter(function(p) { return p.kind !== "cloud" })
+  readonly property var cloudProviders: (controller.info.providers || []).filter(function(p) { return p.kind === "cloud" })
+  // Collapsing applies at once; the saved value catches up after the write.
+  property string collapsedOverride: "unset"
+  readonly property string collapsedGroups: collapsedOverride !== "unset" ? collapsedOverride : String(controller.info.ui?.collapsed || "")
+  function isCollapsed(group) { return collapsedGroups.split(",").indexOf(group) >= 0 }
+  function toggleCollapsed(group) {
+    var groups = collapsedGroups.split(",").filter(function(g) { return g !== "" && g !== group })
+    if (!isCollapsed(group)) groups.push(group)
+    collapsedOverride = groups.sort().join(",")
+    controller.setConfig(".ui.collapsed", collapsedOverride)
+  }
+  // Switching to a device whose engine is present is immediate (and retested);
+  // one that needs a download asks first.
+  function requestDevice(provider, device) {
+    var present = (provider.installedDevices || []).indexOf(device) >= 0
+    if (provider.name === "kokoro_onnx" && !present) {
+      confirmProvider = provider.name; confirmDevice = device; confirmInstall = provider.install || "install"
+      return
+    }
+    controller.setDevice(provider.name, device, present ? "verify" : "")
+  }
+  function installTitle(provider, device) {
+    if (provider === "kokoro_onnx" && device === "gpu") return "Run Kokoro ONNX on the GPU?"
+    if (provider === "kokoro_onnx" && device === "cpu") return "Run Kokoro ONNX on the CPU?"
+    if (provider === "kokoro") return "Install Kokoro PyTorch?"
+    return "Install or repair " + provider + "?"
+  }
+  function installWarning(provider, device) {
+    if (provider === "kokoro_onnx" && device === "gpu")
+      return "Downloads about 2.3 GB: ONNX Runtime with NVIDIA's CUDA and cuDNN libraries. Needs an NVIDIA GPU with a current driver. While kept loaded it holds about 1.3 GB of video memory. The model files are shared with the CPU engine."
+    if (provider === "kokoro_onnx")
+      return "Downloads about 480 MB: ONNX Runtime and the Kokoro model with 27 English voices."
+    if (provider === "kokoro")
+      return "Downloads about 6 GB (PyTorch with CUDA) and loads for 2–3 seconds on every utterance. Kokoro ONNX uses the same voices, starts in under a second, and is about 480 MB."
+    if (provider === "piper")
+      return "Downloads about 100 MB: the Piper engine and one voice."
+    return ""
+  }
   property string confirmKeyRemove: ""
   property string confirmVoiceRemove: ""
   property string apiProvider: ""
@@ -505,11 +547,10 @@ Panel {
           Item {
             width: parent.width; height: providerHeader.implicitHeight
             PanelSectionHeader { id: providerHeader; text: "Speech provider"; foreground: root.fg }
-            Text { anchors.right: parent.right; text: "󰅟  Cloud provider"; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
           }
-          Repeater {
-            model: controller.info.providers || []
-            delegate: Rectangle {
+          Component {
+            id: providerRow
+            Rectangle {
               required property var modelData
               readonly property bool selected: modelData.name === controller.info.provider
               readonly property bool ready: modelData.status === "ready"
@@ -551,7 +592,8 @@ Panel {
                   root.confirmInstall = row.modelData.install
                 }
               }
-              width: parent.width; height: providerCopy.implicitHeight + Style.space(12); radius: Style.space(6)
+              width: parent ? parent.width : 0; height: providerCopy.implicitHeight + Style.space(12); radius: Style.space(6)
+              visible: selected || !root.isCollapsed(cloud ? "cloud" : "local")
               color: selected ? root.tint(0.10) : "transparent"; border.width: selected || activeFocus ? 1 : 0; border.color: activeFocus ? Color.accent : root.tint(0.45)
               activeFocusOnTab: usable
               Accessible.role: Accessible.RadioButton
@@ -649,7 +691,7 @@ Panel {
                       font.family: root.ff; font.pixelSize: Style.font.caption
                       enabled: !chosen
                       Accessible.checked: chosen
-                      onTriggered: controller.setDevice(deviceRow.row.modelData.name, modelData)
+                      onTriggered: root.requestDevice(deviceRow.row.modelData, modelData)
                     }
                   }
                 }
@@ -657,15 +699,50 @@ Panel {
               MouseArea { anchors.fill: parent; enabled: parent.usable; z: 0; cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor; onClicked: parent.activateRow() }
             }
           }
+          Repeater {
+            // One collapsible group per kind. A collapsed group still shows
+            // the provider in use, so the active choice never disappears.
+            model: [{ key: "local", title: "Local", note: "Runs on this computer", rows: root.localProviders },
+                    { key: "cloud", title: "Cloud", note: "󰅟  Sends spoken text to a service", rows: root.cloudProviders }]
+            delegate: Column {
+              id: providerGroup
+              required property var modelData
+              width: parent.width; spacing: Style.space(4)
+              visible: modelData.rows.length > 0
+              Item {
+                width: parent.width; height: groupToggle.implicitHeight + Style.space(4)
+                InlineAction {
+                  id: groupToggle; anchors.left: parent.left; anchors.bottom: parent.bottom
+                  text: (root.isCollapsed(providerGroup.modelData.key) ? "󰅂 " : "󰅀 ") + providerGroup.modelData.title + " · " + providerGroup.modelData.rows.length
+                  color: root.fg; font.family: root.ff; font.pixelSize: Style.font.caption; font.bold: true
+                  Accessible.name: providerGroup.modelData.title + " providers, " + (root.isCollapsed(providerGroup.modelData.key) ? "collapsed" : "expanded")
+                  onTriggered: root.toggleCollapsed(providerGroup.modelData.key)
+                }
+                Text { anchors.right: parent.right; anchors.baseline: groupToggle.baseline; text: providerGroup.modelData.note; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
+              }
+              Repeater { model: providerGroup.modelData.rows; delegate: providerRow }
+            }
+          }
           Rectangle {
             width: parent.width; height: installCol.implicitHeight + 16; radius: 6; visible: root.confirmInstall !== ""; color: root.tint(0.08); border.width: 1; border.color: Color.popups.border
             Column {
               id: installCol; anchors.fill: parent; anchors.margins: 8; spacing: 6
-              Text { text: "Install or repair " + root.confirmProvider + "?"; color: root.fg; font.family: root.ff; font.pixelSize: Style.font.body }
+              Text { width: parent.width; wrapMode: Text.WordWrap; text: root.installTitle(root.confirmProvider, root.confirmDevice || ((root.localProviders.find(function(p) { return p.name === root.confirmProvider }) || {}).device || "")); color: root.fg; font.family: root.ff; font.pixelSize: Style.font.body }
+              Text {
+                readonly property string warning: root.installWarning(root.confirmProvider, root.confirmDevice || ((root.localProviders.find(function(p) { return p.name === root.confirmProvider }) || {}).device || ""))
+                visible: warning !== ""; width: parent.width; text: "󰀪  " + warning; wrapMode: Text.WordWrap; color: Color.accent; font.family: root.ff; font.pixelSize: Style.font.caption
+              }
               Text { width: parent.width; text: "A complete replacement is prepared and tested before it becomes active. The current engine is restored if anything fails. Administrator approval may appear for system packages."; wrapMode: Text.WordWrap; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
               Row { spacing: 8
-                Button { text: "Cancel"; bordered: true; focusable: true; onClicked: { root.confirmInstall = ""; root.confirmProvider = "" } }
-                Button { text: "Continue"; bordered: true; focusable: true; foreground: Color.accent; onClicked: { controller.installProvider(root.confirmProvider); root.confirmInstall = ""; root.confirmProvider = "" } }
+                Button { text: "Cancel"; bordered: true; focusable: true; onClicked: { root.confirmInstall = ""; root.confirmProvider = ""; root.confirmDevice = "" } }
+                Button {
+                  text: root.confirmDevice !== "" ? "Download and switch" : "Download and install"; bordered: true; focusable: true; foreground: Color.accent
+                  onClicked: {
+                    if (root.confirmDevice !== "") controller.setDevice(root.confirmProvider, root.confirmDevice, "install")
+                    else controller.installProvider(root.confirmProvider)
+                    root.confirmInstall = ""; root.confirmProvider = ""; root.confirmDevice = ""
+                  }
+                }
               }
             }
           }

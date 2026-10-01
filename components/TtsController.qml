@@ -136,9 +136,14 @@ Item {
   function stop() { error = ""; speechProc.command = [speakBin, "--stop"]; restart(speechProc) }
   function selectProvider(name) { setConfig(".provider", name) }
   // Only providers that declare `# devices:` offer this; the config layer
-  // accepts cpu or gpu for exactly those paths.
-  function setDevice(provider, device) {
+  // accepts cpu or gpu for exactly those paths. `then` runs once the write
+  // has landed, so a test or install never reads the previous device.
+  property string afterConfigVerify: ""
+  property string afterConfigSetup: ""
+  function setDevice(provider, device, then) {
     if (["kokoro", "kokoro_onnx"].indexOf(provider) < 0 || ["cpu", "gpu"].indexOf(device) < 0) return
+    if (then === "verify") afterConfigVerify = provider
+    else if (then === "install") afterConfigSetup = provider === "kokoro_onnx" ? "kokoro_onnx_" + device : provider
     setConfig("." + provider + ".device", device)
   }
   // Proving a backend takes seconds and makes no sound; `verifying` lets the
@@ -236,8 +241,10 @@ Item {
     onStarted: { write(root.pendingConfigValue + "\n"); root.pendingConfigValue = "" }
     stderr: StdioCollector { waitForEnd: true; onStreamFinished: if (text.trim()) root.error = text.trim() }
     onRunningChanged: if (!running) {
-      if (root.configQueue.length > 0) Qt.callLater(root.runNextConfig)
-      else root.refresh()
+      if (root.configQueue.length > 0) { Qt.callLater(root.runNextConfig); return }
+      if (root.afterConfigSetup !== "") { var target = root.afterConfigSetup; root.afterConfigSetup = ""; root.startSetup(target) }
+      if (root.afterConfigVerify !== "") { var name = root.afterConfigVerify; root.afterConfigVerify = ""; root.verifyProvider(name) }
+      root.refresh()
     }
   }
   Process {

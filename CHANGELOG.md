@@ -22,6 +22,11 @@ Versioning.
   speaking in about 0.2 s and the CPU engine in about 0.5–0.8 s.
 - Model files are digest-checked once per file identity (inode, size, mtime)
   instead of on every utterance.
+- Provider tab: local and cloud providers in collapsible groups (remembered
+  in `.ui.collapsed`; a collapsed group still shows the provider in use).
+  Switching a device whose engine is not installed, and installing Kokoro
+  PyTorch, now ask first and state the download size; switching to an
+  installed device retests it automatically.
 - Fix every managed shortcut being reported as a conflict on Lua-configured
   Hyprland, where `hyprctl binds` shows `__lua` and an opaque callback id
   instead of the command; the managed block is now recognised by its label.
