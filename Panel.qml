@@ -677,7 +677,7 @@ Panel {
                   InlineAction {
                     id: providerUninstall; anchors.right: parent.right
                     visible: root.canUninstall(deviceRow.row.modelData)
-                    text: "󰆴 Uninstall"; color: hovered || activeFocus ? Color.urgent : root.dim; font.family: root.ff; font.pixelSize: Style.font.caption
+                    text: "󰆴"; Accessible.name: "Uninstall"; color: hovered || activeFocus ? Color.urgent : root.dim; font.family: root.ff; font.pixelSize: Style.font.caption
                     onTriggered: root.confirmUninstall = deviceRow.row.modelData.name
                   }
                 Row {
@@ -1166,7 +1166,7 @@ Panel {
                 InlineAction {
                   anchors.right: parent.right
                   visible: root.canUninstall(parent.parent.modelData)
-                  text: "󰆴 Uninstall"; color: hovered || activeFocus ? Color.urgent : root.dim; font.family: root.ff; font.pixelSize: Style.font.caption
+                  text: "󰆴"; Accessible.name: "Uninstall"; color: hovered || activeFocus ? Color.urgent : root.dim; font.family: root.ff; font.pixelSize: Style.font.caption
                   onTriggered: root.ocrConfirmUninstall = parent.parent.modelData.name
                 }
                 Text { width: parent.width; wrapMode: Text.WordWrap; textFormat: Text.PlainText; text: parent.parent.modelData.desc || ""; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
