@@ -666,11 +666,11 @@ Panel {
                 Text { visible: parent.parent.modelData.status === "keyerror"; width: parent.width; wrapMode: Text.WordWrap; text: "The system keyring is locked or unavailable. Unlock it, then press Retry."; color: Color.urgent; font.family: root.ff; font.pixelSize: Style.font.caption }
                 Item {
                   width: parent.width; height: Math.max(deviceRow.implicitHeight, providerUninstall.implicitHeight)
-                  visible: deviceRow.visible || providerUninstall.visible
+                  visible: (deviceRow.row.modelData.devices || []).length > 1 || root.canUninstall(deviceRow.row.modelData)
                   InlineAction {
                     id: providerUninstall; anchors.right: parent.right
                     visible: root.canUninstall(deviceRow.row.modelData)
-                    text: "󰆴 Uninstall"; color: Color.urgent; font.family: root.ff; font.pixelSize: Style.font.caption
+                    text: "󰆴 Uninstall"; color: hovered || activeFocus ? Color.urgent : root.dim; font.family: root.ff; font.pixelSize: Style.font.caption
                     onTriggered: root.confirmUninstall = deviceRow.row.modelData.name
                   }
                 Row {
@@ -1159,7 +1159,7 @@ Panel {
                 InlineAction {
                   anchors.right: parent.right
                   visible: root.canUninstall(parent.parent.modelData)
-                  text: "󰆴 Uninstall"; color: Color.urgent; font.family: root.ff; font.pixelSize: Style.font.caption
+                  text: "󰆴 Uninstall"; color: hovered || activeFocus ? Color.urgent : root.dim; font.family: root.ff; font.pixelSize: Style.font.caption
                   onTriggered: root.ocrConfirmUninstall = parent.parent.modelData.name
                 }
                 Text { width: parent.width; wrapMode: Text.WordWrap; textFormat: Text.PlainText; text: parent.parent.modelData.desc || ""; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
