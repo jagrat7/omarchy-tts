@@ -47,9 +47,12 @@ Panel {
   }
   readonly property var localProviders: (controller.info.providers || []).filter(function(p) { return p.kind !== "cloud" })
   readonly property var cloudProviders: (controller.info.providers || []).filter(function(p) { return p.kind === "cloud" })
-  // Collapsing applies at once; the saved value catches up after the write.
+  // Collapsing applies at once. The saved value is copied when settings
+  // arrive: a binding on info.ui?.collapsed stayed empty after the first
+  // read, so Cloud reopened on every shell start.
   property string collapsedOverride: "unset"
-  readonly property string collapsedGroups: collapsedOverride !== "unset" ? collapsedOverride : String(controller.info.ui?.collapsed || "")
+  property string savedCollapsed: "cloud,ocr-cloud"
+  readonly property string collapsedGroups: collapsedOverride !== "unset" ? collapsedOverride : savedCollapsed
   function isCollapsed(group) { return collapsedGroups.split(",").indexOf(group) >= 0 }
   function toggleCollapsed(group) {
     var groups = collapsedGroups.split(",").filter(function(g) { return g !== "" && g !== group })
@@ -419,6 +422,8 @@ Panel {
       // arriving here already reflects it.
       root.rateOverride = -1
       root.confidenceOverride = -1
+      var ui = controller.info.ui
+      if (ui && typeof ui.collapsed === "string") root.savedCollapsed = ui.collapsed
       root.restoreFromInfo()
       if (!sampleField.activeFocus) {
         root.sampleText = String(controller.info.ui?.sampleText || root.sampleText)
@@ -591,7 +596,7 @@ Panel {
                 }
               }
               width: parent ? parent.width : 0; height: providerCopy.implicitHeight + Style.space(12); radius: Style.space(6)
-              visible: selected || !root.isCollapsed(cloud ? "cloud" : "local")
+              visible: selected || root.collapsedGroups.split(",").indexOf(cloud ? "cloud" : "local") < 0
               color: selected ? root.tint(0.10) : "transparent"; border.width: selected || activeFocus ? 1 : 0; border.color: activeFocus ? Color.accent : root.tint(0.45)
               activeFocusOnTab: usable
               Accessible.role: Accessible.RadioButton
@@ -1103,7 +1108,7 @@ Panel {
                 }
               }
               width: parent ? parent.width : 0; height: engineCopy.implicitHeight + Style.space(12); radius: Style.space(6)
-              visible: selected || !root.isCollapsed(cloud ? "ocr-cloud" : "ocr-local")
+              visible: selected || root.collapsedGroups.split(",").indexOf(cloud ? "ocr-cloud" : "ocr-local") < 0
               color: selected ? root.tint(0.10) : "transparent"; border.width: selected || activeFocus ? 1 : 0; border.color: activeFocus ? Color.accent : root.tint(0.45)
               activeFocusOnTab: usable
               Accessible.role: Accessible.RadioButton
