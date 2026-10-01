@@ -604,9 +604,9 @@ Panel {
                   Text { anchors.right: providerAction.visible ? providerAction.left : parent.right; anchors.rightMargin: providerAction.visible ? 8 : 0; anchors.verticalCenter: parent.verticalCenter; text: { var d = parent.parent.parent
                             if (d.modelData.status === "keyerror") return "Keyring unavailable"
                             if (d.failing) return d.cloudError === "auth" ? "API key rejected" : "Not working"
-                            if (d.untested) return "Untested"
+                            if (d.untested) return ""
                             if (d.ready) return d.cloud ? (d.modelData.keySource === "keyring" ? "● Key stored" : "● Key available") : "● Ready"
-                            return d.modelData.status === "nokey" ? "No API key" : "Not installed" }
+                            return d.modelData.status === "nokey" ? "No API key" : "" }
                     // urgent is otherwise reserved for Stop, but a backend that is
                     // present and cannot speak is a genuine fault, not an absence.
                     color: { var d = parent.parent.parent
@@ -670,7 +670,7 @@ Panel {
                   InlineAction {
                     id: providerUninstall; anchors.right: parent.right
                     visible: root.canUninstall(deviceRow.row.modelData)
-                    text: "Uninstall"; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption
+                    text: "󰆴 Uninstall"; color: Color.urgent; font.family: root.ff; font.pixelSize: Style.font.caption
                     onTriggered: root.confirmUninstall = deviceRow.row.modelData.name
                   }
                 Row {
@@ -1132,9 +1132,9 @@ Panel {
                     text: { var d = parent.parent.parent
                             if (d.modelData.status === "keyerror") return "Keyring unavailable"
                             if (d.failing) return d.cloudError === "auth" ? "API key rejected" : "Not working"
-                            if (d.untested) return "Untested"
+                            if (d.untested) return ""
                             if (d.ready) return d.cloud ? "● Key available" : "● Ready"
-                            return d.modelData.status === "nokey" ? "No API key" : "Not installed" }
+                            return d.modelData.status === "nokey" ? "No API key" : "" }
                     color: { var d = parent.parent.parent; return d.failing ? Color.urgent : d.ready ? Color.accent : root.dim }
                     font.family: root.ff; font.pixelSize: Style.font.caption
                   }
@@ -1159,7 +1159,7 @@ Panel {
                 InlineAction {
                   anchors.right: parent.right
                   visible: root.canUninstall(parent.parent.modelData)
-                  text: "Uninstall"; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption
+                  text: "󰆴 Uninstall"; color: Color.urgent; font.family: root.ff; font.pixelSize: Style.font.caption
                   onTriggered: root.ocrConfirmUninstall = parent.parent.modelData.name
                 }
                 Text { width: parent.width; wrapMode: Text.WordWrap; textFormat: Text.PlainText; text: parent.parent.modelData.desc || ""; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
