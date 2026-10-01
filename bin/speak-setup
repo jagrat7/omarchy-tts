@@ -1232,6 +1232,73 @@ def cleanup() -> int:
     return 0 if ok else 1
 
 
+# What each uninstall target removes, and the provider whose proof it voids.
+# Kokoro ONNX is per device; the CPU and GPU engines hard-link the same model
+# files, so removing one leaves the other's copy intact.
+UNINSTALL_TARGETS = {
+    "piper": (("piper",), "piper", True),
+    "kokoro": (("kokoro",), "kokoro", False),
+    "kokoro_onnx_cpu": (("kokoro_onnx",), "kokoro_onnx", False),
+    "kokoro_onnx_gpu": (("kokoro_onnx_gpu",), "kokoro_onnx", False),
+    "easyocr": (("easyocr",), "ocr:easyocr", False),
+}
+
+
+def stop_warm_engines(engine: str) -> None:
+    """End a kept-loaded Kokoro ONNX server running from this engine."""
+    python = str(ENGINE / engine / "bin" / "python")
+    for entry in Path("/proc").iterdir():
+        if not entry.name.isdigit():
+            continue
+        try:
+            if entry.stat().st_uid != os.getuid():
+                continue
+            argv = (entry / "cmdline").read_bytes().split(b"\0")
+        except OSError:
+            continue
+        if argv and argv[0].decode(errors="replace") == python and b"serve" in argv:
+            try:
+                os.kill(int(entry.name), signal.SIGTERM)
+            except OSError:
+                pass
+    (RUNTIME / f"{engine}.sock").unlink(missing_ok=True)
+
+
+def uninstall(target: str) -> int:
+    if target not in UNINSTALL_TARGETS:
+        emit(ok=False, code="unknown_target", message="Unknown uninstall target")
+        return 1
+    engines, health_key, with_voices = UNINSTALL_TARGETS[target]
+    try:
+        lock_fd = open_private_lock(SETUP_LOCK)
+    except (OSError, RuntimeError):
+        emit(ok=False, code="lock_error", message="Setup lock is unavailable")
+        return 1
+    try:
+        try:
+            fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            emit(ok=False, code="busy", message="An install is running; try again when it finishes.")
+            return 1
+        removed: list[str] = []
+        for engine in engines:
+            stop_warm_engines(engine)
+            leftovers = [ENGINE / engine, *ENGINE.glob(f"{engine}.previous.*"),
+                         *ENGINE.glob(f".{engine}.staging.*"), ENGINE / f".{engine}.transaction.json"]
+            for path in leftovers:
+                if path.exists() or path.is_symlink():
+                    remove_path(path)
+                    removed.append(path.name)
+        if with_voices and VOICES.exists():
+            remove_path(VOICES)
+            removed.append("voices")
+        invalidate_health(health_key)
+        emit(ok=True, removed=removed)
+        return 0
+    finally:
+        os.close(lock_fd)
+
+
 def diagnostics() -> None:
     details = status()
     details.update({
@@ -1260,6 +1327,8 @@ def main() -> int:
     cleanup_parser = sub.add_parser("cleanup")
     cleanup_parser.add_argument("--yes", action="store_true")
     sub.add_parser("diagnostics")
+    uninstall_parser = sub.add_parser("uninstall")
+    uninstall_parser.add_argument("target")
     args = parser.parse_args()
     try:
         ensure_private_runtime()
@@ -1281,6 +1350,7 @@ def main() -> int:
             return 2
         return cleanup()
     elif args.command == "diagnostics": diagnostics()
+    elif args.command == "uninstall": return uninstall(args.target)
     return 0
 
 

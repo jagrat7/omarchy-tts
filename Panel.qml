@@ -30,6 +30,14 @@ Panel {
   // Set when the confirmation is for switching a provider to a device whose
   // engine is not installed yet; Continue then switches and installs.
   property string confirmDevice: ""
+  property string confirmUninstall: ""
+  property string ocrConfirmUninstall: ""
+  // Only engines this plugin installs (an `# install:` header) can be removed
+  // here; system packages such as Tesseract belong to the package manager.
+  function canUninstall(m) {
+    return !!m && m.kind !== "cloud" && !!m.install
+      && ((m.installedDevices || []).length > 0 || ["ready", "untested", "failing"].indexOf(m.status) >= 0)
+  }
   readonly property var localProviders: (controller.info.providers || []).filter(function(p) { return p.kind !== "cloud" })
   readonly property var cloudProviders: (controller.info.providers || []).filter(function(p) { return p.kind === "cloud" })
   // Collapsing applies at once; the saved value catches up after the write.
@@ -656,9 +664,18 @@ Panel {
                 Text { visible: parent.parent.cloud && parent.parent.failing && parent.parent.cloudError === "auth" && parent.parent.modelData.keySource === "env"; width: parent.width; wrapMode: Text.WordWrap; textFormat: Text.PlainText; text: (parent.parent.modelData.keyEnv || "The environment variable") + " is currently authoritative; a key saved here cannot override it."; color: Color.urgent; font.family: root.ff; font.pixelSize: Style.font.caption }
                 Text { visible: parent.parent.modelData.deprecated === true; width: parent.width; wrapMode: Text.WordWrap; text: "Compatibility provider retained for upgrades. Choose Piper for continued support and better speech quality."; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
                 Text { visible: parent.parent.modelData.status === "keyerror"; width: parent.width; wrapMode: Text.WordWrap; text: "The system keyring is locked or unavailable. Unlock it, then press Retry."; color: Color.urgent; font.family: root.ff; font.pixelSize: Style.font.caption }
+                Item {
+                  width: parent.width; height: Math.max(deviceRow.implicitHeight, providerUninstall.implicitHeight)
+                  visible: deviceRow.visible || providerUninstall.visible
+                  InlineAction {
+                    id: providerUninstall; anchors.right: parent.right
+                    visible: root.canUninstall(deviceRow.row.modelData)
+                    text: "Uninstall"; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption
+                    onTriggered: root.confirmUninstall = deviceRow.row.modelData.name
+                  }
                 Row {
                   id: deviceRow
-                  readonly property var row: parent.parent
+                  readonly property var row: parent.parent.parent
                   visible: (row.modelData.devices || []).length > 1
                   spacing: 10
                   Text { text: "Run on"; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
@@ -675,6 +692,7 @@ Panel {
                       onTriggered: root.requestDevice(deviceRow.row.modelData, modelData)
                     }
                   }
+                }
                 }
               }
               MouseArea { anchors.fill: parent; enabled: parent.usable; z: 0; cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor; onClicked: parent.activateRow() }
@@ -715,6 +733,14 @@ Panel {
               else controller.installProvider(root.confirmProvider)
               root.confirmInstall = ""; root.confirmProvider = ""; root.confirmDevice = ""
             }
+          }
+          UninstallConfirm {
+            width: parent.width
+            target: root.confirmUninstall !== "" ? (root.localProviders.find(function(p) { return p.name === root.confirmUninstall }) || null) : null
+            activeName: controller.info.provider || ""
+            foreground: root.fg; fontFamily: root.ff
+            onCancelled: root.confirmUninstall = ""
+            onConfirmed: function(uninstallTarget) { controller.uninstall(uninstallTarget); root.confirmUninstall = "" }
           }
           Rectangle {
             width: parent.width; height: keyRemoveRow.implicitHeight + 16; radius: 6
@@ -1130,6 +1156,12 @@ Panel {
                     onTriggered: parent.parent.parent.activateAction()
                   }
                 }
+                InlineAction {
+                  anchors.right: parent.right
+                  visible: root.canUninstall(parent.parent.modelData)
+                  text: "Uninstall"; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption
+                  onTriggered: root.ocrConfirmUninstall = parent.parent.modelData.name
+                }
                 Text { width: parent.width; wrapMode: Text.WordWrap; textFormat: Text.PlainText; text: parent.parent.modelData.desc || ""; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
                 Text { visible: parent.parent.cloud; textFormat: Text.PlainText; text: "󰅟  Sends screenshots to " + (parent.parent.modelData.vendor || parent.parent.modelData.name); color: root.fg; font.family: root.ff; font.pixelSize: Style.font.caption }
                 Text { visible: parent.parent.failing; width: parent.width; wrapMode: Text.WordWrap; text: parent.parent.cloudError === "auth" ? (parent.parent.modelData.keySource === "env" ? "The environment API key was rejected. Update or unset it, restart Omarchy Shell, then test again." : "The API key was rejected. Remove it and add a valid key, then test again.") : parent.parent.cloudError === "forbidden" ? "The service denied access. Check API enablement, permissions, and billing, then test again." : (parent.parent.cloud ? "The last request did not complete. Press Test to check it again." : "Installed, but it could not read the test image. Press Test to try again."); color: Color.urgent; font.family: root.ff; font.pixelSize: Style.font.caption }
@@ -1145,6 +1177,15 @@ Panel {
             foreground: root.fg; fontFamily: root.ff
             onCancelled: { root.ocrConfirmInstall = ""; root.ocrConfirmEngine = "" }
             onAccepted: { controller.installProvider(root.ocrConfirmEngine); root.ocrConfirmInstall = ""; root.ocrConfirmEngine = "" }
+          }
+          UninstallConfirm {
+            width: parent.width
+            target: root.ocrConfirmUninstall !== "" ? ((controller.info.ocr?.engines || []).find(function(e) { return e.name === root.ocrConfirmUninstall }) || null) : null
+            activeName: controller.info.ocr?.engine || ""
+            inUseWarning: "This is the OCR engine in use. Pick another one afterwards or screen reading will stop."
+            foreground: root.fg; fontFamily: root.ff
+            onCancelled: root.ocrConfirmUninstall = ""
+            onConfirmed: function(uninstallTarget) { controller.uninstall(uninstallTarget); root.ocrConfirmUninstall = "" }
           }
           Rectangle {
             width: parent.width; height: ocrKeyRemoveRow.implicitHeight + 16; radius: 6

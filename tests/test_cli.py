@@ -1840,6 +1840,36 @@ class CliConfigTests(unittest.TestCase):
         self.assertEqual(piper["devices"], [])
         self.assertIsNone(piper["device"])
 
+    def test_uninstall_removes_one_device_engine_and_keeps_shared_models(self):
+        engines = Path(self.temp.name, "omarchy-tts", "engines")
+        cpu_models = engines / "kokoro_onnx" / "models"
+        gpu_models = engines / "kokoro_onnx_gpu" / "models"
+        cpu_models.mkdir(parents=True)
+        gpu_models.mkdir(parents=True)
+        (cpu_models / "kokoro-v1.0.onnx").write_bytes(b"model")
+        os.link(cpu_models / "kokoro-v1.0.onnx", gpu_models / "kokoro-v1.0.onnx")
+        (engines / "kokoro_onnx_gpu.previous.1").mkdir()
+        result = subprocess.run([SETUP, "uninstall", "kokoro_onnx_gpu"], env=self.env,
+                                capture_output=True, text=True, check=True)
+        self.assertTrue(json.loads(result.stdout)["ok"])
+        self.assertFalse((engines / "kokoro_onnx_gpu").exists())
+        self.assertFalse((engines / "kokoro_onnx_gpu.previous.1").exists())
+        self.assertEqual((cpu_models / "kokoro-v1.0.onnx").read_bytes(), b"model")
+        refused = subprocess.run([SETUP, "uninstall", "../kokoro_onnx"], env=self.env,
+                                 capture_output=True, text=True)
+        self.assertFalse(json.loads(refused.stdout)["ok"])
+        self.assertTrue((engines / "kokoro_onnx").exists())
+
+    def test_uninstalling_piper_removes_its_voices(self):
+        data = Path(self.temp.name, "omarchy-tts")
+        (data / "engines" / "piper" / "bin").mkdir(parents=True)
+        (data / "voices" / "piper").mkdir(parents=True)
+        (data / "voices" / "piper" / "en_US-amy-medium.onnx").write_bytes(b"voice")
+        subprocess.run([SETUP, "uninstall", "piper"], env=self.env,
+                       capture_output=True, text=True, check=True)
+        self.assertFalse((data / "engines" / "piper").exists())
+        self.assertFalse((data / "voices" / "piper").exists())
+
     def test_install_info_comes_from_engine_headers_per_device(self):
         info = json.loads(self.run_speak("--info").stdout)
         providers = {p["name"]: p for p in info["providers"]}

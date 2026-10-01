@@ -225,6 +225,10 @@ Item {
     var targets = ({ "piper": "piper", "kokoro": "kokoro", "kokoro_onnx": "kokoro_onnx", "easyocr": "easyocr" })
     if (targets[provider]) startSetup(targets[provider])
   }
+  function uninstall(target) {
+    var targets = ["piper", "kokoro", "kokoro_onnx_cpu", "kokoro_onnx_gpu", "easyocr"]
+    if (targets.indexOf(target) >= 0) action([setupBin, "uninstall", target])
+  }
   function cancelSetup() { if (setupCancellable) action([setupBin, "cancel"]) }
   function storeKey(provider, key, purpose) {
     if (["openai", "elevenlabs", "google", "gemini"].indexOf(provider) < 0 || key.length < 8) return

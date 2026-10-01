@@ -27,6 +27,13 @@ Versioning.
   Switching a device whose engine is not installed, and installing Kokoro
   PyTorch, now ask first and state the download size; switching to an
   installed device retests it automatically.
+- Uninstall for every engine the plugin installs (Piper with its voices,
+  Kokoro PyTorch, each Kokoro ONNX device engine, EasyOCR), from the panel or
+  `speak-setup uninstall <target>`. A kept-loaded Kokoro ONNX engine is
+  stopped first; removing one device engine keeps the other's model files.
+- Install confirmations for speech and OCR engines share one component; each
+  engine declares its download with `# installsize:` / `# installnote:`
+  headers (per device with `-cpu` / `-gpu`).
 - Fix every managed shortcut being reported as a conflict on Lua-configured
   Hyprland, where `hyprctl binds` shows `__lua` and an opaque callback id
   instead of the command; the managed block is now recognised by its label.
