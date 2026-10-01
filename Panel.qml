@@ -729,19 +729,20 @@ Panel {
               Repeater { model: providerGroup.modelData.rows; delegate: providerRow }
             }
           }
-          InstallConfirm {
+          EngineConfirm {
             width: parent.width
             target: root.confirmInstall !== "" ? (root.localProviders.find(function(p) { return p.name === root.confirmProvider }) || null) : null
             device: root.confirmDevice
             foreground: root.fg; fontFamily: root.ff
             onCancelled: { root.confirmInstall = ""; root.confirmProvider = ""; root.confirmDevice = "" }
-            onAccepted: {
+            onConfirmed: {
               if (root.confirmDevice !== "") controller.setDevice(root.confirmProvider, root.confirmDevice, "install")
               else controller.installProvider(root.confirmProvider)
               root.confirmInstall = ""; root.confirmProvider = ""; root.confirmDevice = ""
             }
           }
-          UninstallConfirm {
+          EngineConfirm {
+            mode: "uninstall"
             width: parent.width
             target: root.confirmUninstall !== "" ? (root.localProviders.find(function(p) { return p.name === root.confirmUninstall }) || null) : null
             activeName: controller.info.provider || ""
@@ -1178,14 +1179,15 @@ Panel {
               MouseArea { anchors.fill: parent; enabled: parent.usable; z: 0; cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor; onClicked: parent.activateRow() }
             }
           }
-          InstallConfirm {
+          EngineConfirm {
             width: parent.width
             target: root.ocrConfirmInstall !== "" ? ((controller.info.ocr?.engines || []).find(function(e) { return e.name === root.ocrConfirmEngine }) || null) : null
             foreground: root.fg; fontFamily: root.ff
             onCancelled: { root.ocrConfirmInstall = ""; root.ocrConfirmEngine = "" }
-            onAccepted: { controller.installProvider(root.ocrConfirmEngine); root.ocrConfirmInstall = ""; root.ocrConfirmEngine = "" }
+            onConfirmed: { controller.installProvider(root.ocrConfirmEngine); root.ocrConfirmInstall = ""; root.ocrConfirmEngine = "" }
           }
-          UninstallConfirm {
+          EngineConfirm {
+            mode: "uninstall"
             width: parent.width
             target: root.ocrConfirmUninstall !== "" ? ((controller.info.ocr?.engines || []).find(function(e) { return e.name === root.ocrConfirmUninstall }) || null) : null
             activeName: controller.info.ocr?.engine || ""

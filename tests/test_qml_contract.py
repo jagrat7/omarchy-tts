@@ -20,9 +20,11 @@ class QmlContractTests(unittest.TestCase):
         cls.setting_toggle = (ROOT / "components" / "SettingToggle.qml").read_text()
 
     def test_every_local_install_confirmation_uses_the_shared_component(self):
-        component = (ROOT / "components" / "InstallConfirm.qml").read_text()
+        component = (ROOT / "components" / "EngineConfirm.qml").read_text()
         self.assertIn("target.installInfo", component)
-        self.assertEqual(self.panel.count("InstallConfirm {"), 2)
+        # Install and uninstall, for speech and for OCR, all use it.
+        self.assertEqual(self.panel.count("EngineConfirm {"), 4)
+        self.assertEqual(self.panel.count('mode: "uninstall"'), 2)
         # Sizes live in engine headers, not in the panel.
         self.assertNotIn("2.3 GB", self.panel)
         self.assertNotIn("About 6 GB", self.panel)
