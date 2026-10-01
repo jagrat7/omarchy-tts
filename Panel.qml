@@ -31,6 +31,13 @@ Panel {
   // engine is not installed yet; Continue then switches and installs.
   property string confirmDevice: ""
   property string confirmUninstall: ""
+  property var autoVerified: ({})
+  onActiveProviderChanged: {
+    var p = activeProvider
+    if (!p || p.status !== "untested" || autoVerified[p.name] || controller.verifying !== "") return
+    autoVerified[p.name] = true
+    controller.verifyProvider(p.name)
+  }
   property string ocrConfirmUninstall: ""
   // Only engines this plugin installs (an `# install:` header) can be removed
   // here; system packages such as Tesseract belong to the package manager.
@@ -555,7 +562,7 @@ Panel {
               // cloud provider could never be turned on.
               readonly property bool usable: ready || untested
               readonly property bool cloud: modelData.kind === "cloud"
-              function activateRow() { if (usable) controller.selectProvider(modelData.name) }
+              function activateRow() { if (usable) controller.selectProvider(modelData.name, untested) }
               function activateAction() {
                 var row = this
                 if (row.cloud && row.failing && row.cloudError === "auth"
@@ -617,7 +624,7 @@ Panel {
                     font.pixelSize: Style.font.caption
                   }
                   InlineAction {
-                    id: providerAction; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; visible: !parent.parent.parent.ready || (parent.parent.parent.cloud && parent.parent.parent.modelData.keySource === "keyring")
+                    id: providerAction; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; visible: (!parent.parent.parent.ready && !parent.parent.parent.untested) || controller.verifying === parent.parent.parent.modelData.name || (parent.parent.parent.cloud && parent.parent.parent.modelData.keySource === "keyring")
                     text: { var d = parent.parent.parent
                             if (controller.verifying === d.modelData.name) return "Testing…"
                             if (d.modelData.status === "keyerror") return "Retry"
@@ -630,7 +637,7 @@ Panel {
                             if (d.cloud && d.failing && d.cloudError === "auth") return "Replace key"
                             if (d.cloud && d.failing && d.cloudError === "forbidden") return "Fix access"
                             if (d.failing && !d.cloud && d.modelData.install) return "Repair"
-                            if (d.failing || d.untested) return "Test"
+                            if (d.failing) return "Retry"
                             if (d.cloud && d.modelData.keySource === "keyring") return "Remove key"
                             return "Install" }
                     color: Color.accent
@@ -1083,7 +1090,7 @@ Panel {
               readonly property string cloudError: String((((modelData.usage || {}).lastRequest || {}).errorCode) || "")
               readonly property bool usable: ready || untested
               readonly property bool cloud: modelData.kind === "cloud"
-              function activateRow() { if (usable) controller.selectOcrEngine(modelData.name) }
+              function activateRow() { if (usable) controller.selectOcrEngine(modelData.name, untested) }
               function activateAction() {
                 var row = this
                 if (row.cloud && row.failing && row.cloudError === "auth"
@@ -1139,7 +1146,7 @@ Panel {
                     font.family: root.ff; font.pixelSize: Style.font.caption
                   }
                   InlineAction {
-                    id: engineAction; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; visible: !parent.parent.parent.ready || (parent.parent.parent.cloud && parent.parent.parent.modelData.keySource === "keyring")
+                    id: engineAction; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; visible: (!parent.parent.parent.ready && !parent.parent.parent.untested) || controller.verifying === "ocr:" + parent.parent.parent.modelData.name || (parent.parent.parent.cloud && parent.parent.parent.modelData.keySource === "keyring")
                     text: { var d = parent.parent.parent
                             if (controller.verifying === "ocr:" + d.modelData.name) return "Testing…"
                             if (d.modelData.status === "keyerror") return "Retry"
@@ -1149,7 +1156,7 @@ Panel {
                             if (d.cloud && d.failing && d.cloudError === "auth") return "Replace key"
                             if (d.cloud && d.failing && d.cloudError === "forbidden") return "Fix access"
                             if (d.failing && !d.cloud && d.modelData.install) return "Repair"
-                            if (d.failing || d.untested) return "Test"
+                            if (d.failing) return "Retry"
                             if (d.cloud && d.modelData.keySource === "keyring") return "Remove key"
                             return "Install" }
                     color: Color.accent; font.family: root.ff; font.pixelSize: Style.font.caption

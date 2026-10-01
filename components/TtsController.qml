@@ -134,7 +134,8 @@ Item {
   }
   function speak(text) { error = ""; pendingSpeech = String(text).slice(0, 4096); speechProc.command = [speakBin, "--stdin-json"]; restart(speechProc) }
   function stop() { error = ""; speechProc.command = [speakBin, "--stop"]; restart(speechProc) }
-  function selectProvider(name) { setConfig(".provider", name) }
+  // Choosing something not yet proven proves it, once the choice has landed.
+  function selectProvider(name, verify) { if (verify) afterConfigVerify = name; setConfig(".provider", name) }
   // Only providers that declare `# devices:` offer this; the config layer
   // accepts cpu or gpu for exactly those paths. `then` runs once the write
   // has landed, so a test or install never reads the previous device.
@@ -158,7 +159,8 @@ Item {
     if (verifyProc.running) { error = "Another backend test is still running."; return }
     verifying = "ocr:" + name; verifyProc.command = [speakBin, "--verify-ocr", name]; verifyProc.running = true
   }
-  function selectOcrEngine(name) { setConfig(".ocr.engine", name) }
+  property string afterConfigVerifyOcr: ""
+  function selectOcrEngine(name, verify) { if (verify) afterConfigVerifyOcr = name; setConfig(".ocr.engine", name) }
   function refreshUsage(name) {
     error = ""
     if (usageProc.running) { error = "Usage is already being refreshed."; return }
@@ -248,6 +250,7 @@ Item {
       if (root.configQueue.length > 0) { Qt.callLater(root.runNextConfig); return }
       if (root.afterConfigSetup !== "") { var target = root.afterConfigSetup; root.afterConfigSetup = ""; root.startSetup(target) }
       if (root.afterConfigVerify !== "") { var name = root.afterConfigVerify; root.afterConfigVerify = ""; root.verifyProvider(name) }
+      else if (root.afterConfigVerifyOcr !== "") { var engine = root.afterConfigVerifyOcr; root.afterConfigVerifyOcr = ""; root.verifyOcrEngine(engine) }
       root.refresh()
     }
   }
