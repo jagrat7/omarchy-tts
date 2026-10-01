@@ -673,8 +673,6 @@ Panel {
                 Text { visible: parent.parent.cloud && parent.parent.failing && parent.parent.cloudError === "auth" && parent.parent.modelData.keySource === "env"; width: parent.width; wrapMode: Text.WordWrap; textFormat: Text.PlainText; text: (parent.parent.modelData.keyEnv || "The environment variable") + " is currently authoritative; a key saved here cannot override it."; color: Color.urgent; font.family: root.ff; font.pixelSize: Style.font.caption }
                 Text { visible: parent.parent.modelData.deprecated === true; width: parent.width; wrapMode: Text.WordWrap; text: "Compatibility provider retained for upgrades. Choose Piper for continued support and better speech quality."; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
                 Text { visible: parent.parent.modelData.status === "keyerror"; width: parent.width; wrapMode: Text.WordWrap; text: "The system keyring is locked or unavailable. Unlock it, then press Retry."; color: Color.urgent; font.family: root.ff; font.pixelSize: Style.font.caption }
-                Text { visible: parent.parent.modelData.name === "kokoro" && !parent.parent.failing; text: "Heavy · about 6 GB · slow to start on every utterance"; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
-                Text { visible: parent.parent.modelData.name === "kokoro_onnx" && !parent.parent.failing; text: parent.parent.modelData.device === "gpu" ? "GPU engine · about 2.3 GB including CUDA libraries" : "CPU engine · about 400 MB"; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
                 Row {
                   id: deviceRow
                   readonly property var row: parent.parent
