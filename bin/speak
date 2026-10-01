@@ -357,6 +357,17 @@ provider_installed() { # provider executable [device]: 0 if the probe passes
     bash -c "$probe" >/dev/null 2>&1
 }
 
+install_info() { # executable: what installing it downloads, keyed by device ("default" without one)
+  local bin="$1" device
+  for device in default $(meta_of "$bin" devices); do
+    local suffix=""
+    [[ "$device" == default ]] || suffix="-$device"
+    jq -nc --arg device "$device" --arg size "$(meta_of "$bin" "installsize$suffix")" \
+           --arg note "$(meta_of "$bin" "installnote$suffix")" \
+      'if $size == "" and $note == "" then empty else {($device): {size:$size, note:$note}} end'
+  done | jq -sc 'add // {}'
+}
+
 installed_devices() { # provider executable: JSON list of devices whose engine is present
   local bin="$1" device
   for device in $(meta_of "$bin" devices); do
@@ -669,6 +680,7 @@ emit_info() {
              --arg status "$status" \
              --arg health "$health" \
              --arg install "$(meta_of "$b" install)" \
+             --argjson installInfo "$(install_info "$b")" \
              --arg vendor "$(meta_of "$b" vendor)" \
              --arg voices "$(meta_of "$b" voices)" \
              --arg devices "$(meta_of "$b" devices)" \
@@ -685,7 +697,7 @@ emit_info() {
              --argjson config "$config" \
              --argjson usage "$(cloud_metrics_of "$n")" \
              '{name:$name, title:(if $title=="" then $name else $title end), health:$health, kind:(if $kind=="" then "local" else $kind end),
-               desc:$desc, status:$status, install:$install, vendor:$vendor,
+               desc:$desc, status:$status, install:$install, installInfo:$installInfo, vendor:$vendor,
                keySource:$keySource, keyEnv:(if $keyEnv=="" then null else $keyEnv end),
                deprecated:($deprecated=="true"),
                refreshVoices:($refreshVoices=="true"), refreshUsage:($refreshUsage=="true"),
@@ -720,13 +732,14 @@ emit_info() {
              --arg status "$status" \
              --arg health "$health" \
              --arg install "$(meta_of "$b" install)" \
+             --argjson installInfo "$(install_info "$b")" \
              --arg vendor "$(meta_of "$b" vendor)" \
              --arg confidence "$(meta_of "$b" confidence)" \
              --arg keySource "$credential_source" \
              --arg keyEnv "$credential_env" \
              --argjson usage "$(cloud_metrics_of "ocr-$n")" \
              '{name:$name, title:(if $title=="" then $name else $title end), health:$health, kind:(if $kind=="" then "local" else $kind end),
-               desc:$desc, status:$status, install:$install, vendor:$vendor,
+               desc:$desc, status:$status, install:$install, installInfo:$installInfo, vendor:$vendor,
                keySource:$keySource, keyEnv:(if $keyEnv=="" then null else $keyEnv end),
                supportsConfidence:($confidence=="true"), usage:$usage}'
     done | jq -sc 'sort_by(.kind == "cloud", .status != "ready", .name)'

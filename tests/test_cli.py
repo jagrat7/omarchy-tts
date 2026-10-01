@@ -1840,6 +1840,17 @@ class CliConfigTests(unittest.TestCase):
         self.assertEqual(piper["devices"], [])
         self.assertIsNone(piper["device"])
 
+    def test_install_info_comes_from_engine_headers_per_device(self):
+        info = json.loads(self.run_speak("--info").stdout)
+        providers = {p["name"]: p for p in info["providers"]}
+        self.assertEqual(set(providers["kokoro_onnx"]["installInfo"]), {"cpu", "gpu"})
+        self.assertIn("GB", providers["kokoro_onnx"]["installInfo"]["gpu"]["size"])
+        self.assertIn("default", providers["kokoro"]["installInfo"])
+        self.assertIn("default", providers["piper"]["installInfo"])
+        self.assertEqual(providers["openai"]["installInfo"], {})
+        engines = {e["name"]: e for e in info["ocr"]["engines"]}
+        self.assertIn("default", engines["easyocr"]["installInfo"])
+
     def test_model_artefacts_are_pinned_to_immutable_sources_with_digests(self):
         manifest = json.loads((ROOT / "lib" / "engines" / "models.json").read_text())
         for name, entry in manifest["easyocr"]["models"].items():

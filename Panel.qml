@@ -52,23 +52,6 @@ Panel {
     }
     controller.setDevice(provider.name, device, present ? "verify" : "")
   }
-  function installTitle(provider, device) {
-    if (provider === "kokoro_onnx" && device === "gpu") return "Run Kokoro ONNX on the GPU?"
-    if (provider === "kokoro_onnx" && device === "cpu") return "Run Kokoro ONNX on the CPU?"
-    if (provider === "kokoro") return "Install Kokoro PyTorch?"
-    return "Install or repair " + provider + "?"
-  }
-  function installWarning(provider, device) {
-    if (provider === "kokoro_onnx" && device === "gpu")
-      return "Downloads about 2.3 GB: ONNX Runtime with NVIDIA's CUDA and cuDNN libraries. Needs an NVIDIA GPU with a current driver. While kept loaded it holds about 1.3 GB of video memory. The model files are shared with the CPU engine."
-    if (provider === "kokoro_onnx")
-      return "Downloads about 480 MB: ONNX Runtime and the Kokoro model with 27 English voices."
-    if (provider === "kokoro")
-      return "Downloads about 6 GB (PyTorch with CUDA) and loads for 2–3 seconds on every utterance. Kokoro ONNX uses the same voices, starts in under a second, and is about 480 MB."
-    if (provider === "piper")
-      return "Downloads about 100 MB: the Piper engine and one voice."
-    return ""
-  }
   property string confirmKeyRemove: ""
   property string confirmVoiceRemove: ""
   property string apiProvider: ""
@@ -721,27 +704,16 @@ Panel {
               Repeater { model: providerGroup.modelData.rows; delegate: providerRow }
             }
           }
-          Rectangle {
-            width: parent.width; height: installCol.implicitHeight + 16; radius: 6; visible: root.confirmInstall !== ""; color: root.tint(0.08); border.width: 1; border.color: Color.popups.border
-            Column {
-              id: installCol; anchors.fill: parent; anchors.margins: 8; spacing: 6
-              Text { width: parent.width; wrapMode: Text.WordWrap; text: root.installTitle(root.confirmProvider, root.confirmDevice || ((root.localProviders.find(function(p) { return p.name === root.confirmProvider }) || {}).device || "")); color: root.fg; font.family: root.ff; font.pixelSize: Style.font.body }
-              Text {
-                readonly property string warning: root.installWarning(root.confirmProvider, root.confirmDevice || ((root.localProviders.find(function(p) { return p.name === root.confirmProvider }) || {}).device || ""))
-                visible: warning !== ""; width: parent.width; text: "󰀪  " + warning; wrapMode: Text.WordWrap; color: Color.accent; font.family: root.ff; font.pixelSize: Style.font.caption
-              }
-              Text { width: parent.width; text: "A complete replacement is prepared and tested before it becomes active. The current engine is restored if anything fails. Administrator approval may appear for system packages."; wrapMode: Text.WordWrap; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
-              Row { spacing: 8
-                Button { text: "Cancel"; bordered: true; focusable: true; onClicked: { root.confirmInstall = ""; root.confirmProvider = ""; root.confirmDevice = "" } }
-                Button {
-                  text: root.confirmDevice !== "" ? "Download and switch" : "Download and install"; bordered: true; focusable: true; foreground: Color.accent
-                  onClicked: {
-                    if (root.confirmDevice !== "") controller.setDevice(root.confirmProvider, root.confirmDevice, "install")
-                    else controller.installProvider(root.confirmProvider)
-                    root.confirmInstall = ""; root.confirmProvider = ""; root.confirmDevice = ""
-                  }
-                }
-              }
+          InstallConfirm {
+            width: parent.width
+            target: root.confirmInstall !== "" ? (root.localProviders.find(function(p) { return p.name === root.confirmProvider }) || null) : null
+            device: root.confirmDevice
+            foreground: root.fg; fontFamily: root.ff
+            onCancelled: { root.confirmInstall = ""; root.confirmProvider = ""; root.confirmDevice = "" }
+            onAccepted: {
+              if (root.confirmDevice !== "") controller.setDevice(root.confirmProvider, root.confirmDevice, "install")
+              else controller.installProvider(root.confirmProvider)
+              root.confirmInstall = ""; root.confirmProvider = ""; root.confirmDevice = ""
             }
           }
           Rectangle {
@@ -1167,17 +1139,12 @@ Panel {
               MouseArea { anchors.fill: parent; enabled: parent.usable; z: 0; cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor; onClicked: parent.activateRow() }
             }
           }
-          Rectangle {
-            width: parent.width; height: ocrInstallCol.implicitHeight + 16; radius: 6; visible: root.ocrConfirmInstall !== ""; color: root.tint(0.08); border.width: 1; border.color: Color.popups.border
-            Column {
-              id: ocrInstallCol; anchors.fill: parent; anchors.margins: 8; spacing: 6
-              Text { text: "Install " + root.ocrConfirmEngine + "?"; color: root.fg; font.family: root.ff; font.pixelSize: Style.font.body }
-              Text { width: parent.width; text: root.ocrConfirmEngine === "easyocr" ? "About 6 GB of disk in a private Python environment, and several seconds of model loading on every capture. Worth it for stylised or low-contrast text the default cannot read." : "The required packages will be installed for you."; wrapMode: Text.WordWrap; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
-              Row { spacing: 8
-                Button { text: "Cancel"; bordered: true; focusable: true; onClicked: { root.ocrConfirmInstall = ""; root.ocrConfirmEngine = "" } }
-                Button { text: "Install"; bordered: true; focusable: true; foreground: Color.accent; onClicked: { controller.installProvider(root.ocrConfirmEngine); root.ocrConfirmInstall = ""; root.ocrConfirmEngine = "" } }
-              }
-            }
+          InstallConfirm {
+            width: parent.width
+            target: root.ocrConfirmInstall !== "" ? ((controller.info.ocr?.engines || []).find(function(e) { return e.name === root.ocrConfirmEngine }) || null) : null
+            foreground: root.fg; fontFamily: root.ff
+            onCancelled: { root.ocrConfirmInstall = ""; root.ocrConfirmEngine = "" }
+            onAccepted: { controller.installProvider(root.ocrConfirmEngine); root.ocrConfirmInstall = ""; root.ocrConfirmEngine = "" }
           }
           Rectangle {
             width: parent.width; height: ocrKeyRemoveRow.implicitHeight + 16; radius: 6

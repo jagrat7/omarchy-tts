@@ -19,6 +19,14 @@ class QmlContractTests(unittest.TestCase):
         cls.key_row = (ROOT / "components" / "KeyRow.qml").read_text()
         cls.setting_toggle = (ROOT / "components" / "SettingToggle.qml").read_text()
 
+    def test_every_local_install_confirmation_uses_the_shared_component(self):
+        component = (ROOT / "components" / "InstallConfirm.qml").read_text()
+        self.assertIn("target.installInfo", component)
+        self.assertEqual(self.panel.count("InstallConfirm {"), 2)
+        # Sizes live in engine headers, not in the panel.
+        self.assertNotIn("2.3 GB", self.panel)
+        self.assertNotIn("About 6 GB", self.panel)
+
     def test_setup_cancel_requires_registered_worker_identity(self):
         self.assertIn("readonly property bool setupCancellable", self.controller)
         self.assertIn("Number(setupJob.pid || 0) > 1", self.controller)
