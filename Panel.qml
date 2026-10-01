@@ -593,7 +593,7 @@ Panel {
                   Text { id: providerRadio; text: parent.parent.parent.selected ? "󰝥" : "󰝦"; color: parent.parent.parent.ready ? (parent.parent.parent.selected ? Color.accent : root.fg) : root.dim; font.family: root.ff; font.pixelSize: Style.font.body }
                   Text { id: providerName; anchors.left: providerRadio.right; anchors.leftMargin: 8; textFormat: Text.PlainText; text: parent.parent.parent.modelData.title || parent.parent.parent.modelData.name; color: parent.parent.parent.usable ? root.fg : root.dim; font.family: root.ff; font.pixelSize: Style.font.body }
                   Text { anchors.left: providerName.right; anchors.leftMargin: 6; anchors.baseline: providerName.baseline; textFormat: Text.PlainText; text: parent.parent.parent.modelData.kind + (parent.parent.parent.modelData.device ? " · " + parent.parent.parent.modelData.device.toUpperCase() : ""); color: parent.parent.parent.modelData.device === "gpu" ? Color.accent : root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
-                  Text { anchors.right: providerAction.left; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter; text: { var d = parent.parent.parent
+                  Text { anchors.right: providerAction.visible ? providerAction.left : parent.right; anchors.rightMargin: providerAction.visible ? 8 : 0; anchors.verticalCenter: parent.verticalCenter; text: { var d = parent.parent.parent
                             if (d.modelData.status === "keyerror") return "Keyring unavailable"
                             if (d.failing) return d.cloudError === "auth" ? "API key rejected" : "Not working"
                             if (d.untested) return "Untested"
@@ -1102,7 +1102,7 @@ Panel {
                   Text { id: engineRadio; text: parent.parent.parent.selected ? "󰝥" : "󰝦"; color: parent.parent.parent.ready ? (parent.parent.parent.selected ? Color.accent : root.fg) : root.dim; font.family: root.ff; font.pixelSize: Style.font.body }
                   Text { id: engineName; anchors.left: engineRadio.right; anchors.leftMargin: 8; textFormat: Text.PlainText; text: parent.parent.parent.modelData.title || parent.parent.parent.modelData.name; color: parent.parent.parent.usable ? root.fg : root.dim; font.family: root.ff; font.pixelSize: Style.font.body }
                   Text { anchors.left: engineName.right; anchors.leftMargin: 6; anchors.baseline: engineName.baseline; textFormat: Text.PlainText; text: parent.parent.parent.modelData.kind; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
-                  Text { anchors.right: engineAction.left; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter
+                  Text { anchors.right: engineAction.visible ? engineAction.left : parent.right; anchors.rightMargin: engineAction.visible ? 8 : 0; anchors.verticalCenter: parent.verticalCenter
                     text: { var d = parent.parent.parent
                             if (d.modelData.status === "keyerror") return "Keyring unavailable"
                             if (d.failing) return d.cloudError === "auth" ? "API key rejected" : "Not working"
