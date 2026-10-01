@@ -56,7 +56,7 @@ Rectangle {
     }
     Text {
       width: parent.width; wrapMode: Text.WordWrap
-      text: "A complete replacement is prepared and tested before it becomes active. The current engine is restored if anything fails. Administrator approval may appear for system packages."
+      text: "Tested before it replaces anything; rolled back if it fails."
       color: Color.muted
       font.family: root.fontFamily; font.pixelSize: Style.font.caption
     }

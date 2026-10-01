@@ -3,7 +3,7 @@
 # title: EasyOCR
 # kind: local
 # installsize: about 6 GB
-# installnote: A private Python environment, and several seconds of model loading on every capture. Worth it for stylised or low-contrast text the default cannot read.
+# installnote: Better on stylised text; slow to load on every capture.
 # probe: [[ -x "${EASYOCR_PYTHON:-${TTS_DATA_DIR:-$HOME/.local/share/omarchy-tts}/engines/easyocr/bin/python}" && -s "${EASYOCR_MODELS:-${TTS_DATA_DIR:-$HOME/.local/share/omarchy-tts}/engines/easyocr/models}/craft_mlt_25k.pth" ]] && ( [[ -n "${EASYOCR_PYTHON:-}" ]] || [[ "$(cat "${TTS_DATA_DIR:-$HOME/.local/share/omarchy-tts}/engines/easyocr/.lock-sha256" 2>/dev/null)" == "$(sha256sum "$TTS_PLUGIN_DIR/lib/engines/easyocr.lock" | cut -d' ' -f1)" ]] )
 # install: easyocr
 # confidence: true

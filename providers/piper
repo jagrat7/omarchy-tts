@@ -3,7 +3,7 @@
 # title: Piper
 # kind: local
 # installsize: about 230 MB
-# installnote: The Piper engine and one voice; more voices download from the Voice tab.
+# installnote: Engine and one voice.
 # probe: ([[ -x "${TTS_DATA_DIR:-$HOME/.local/share/omarchy-tts}/engines/piper/bin/piper" && "$(cat "${TTS_DATA_DIR:-$HOME/.local/share/omarchy-tts}/engines/piper/.lock-sha256" 2>/dev/null)" == "$(sha256sum "$TTS_PLUGIN_DIR/lib/engines/piper.lock" | cut -d' ' -f1)" ]] || command -v piper >/dev/null) && (for model in "${PIPER_VOICES_DIR:-${TTS_DATA_DIR:-$HOME/.local/share/omarchy-tts}/voices/piper}"/*.onnx "$HOME/.local/share/piper-voices"/*.onnx; do [[ -s "$model" && -s "$model.json" ]] && exit 0; done; exit 1)
 # install: managed venv · piper-tts==1.7.0
 # voices: downloadable
