@@ -271,6 +271,9 @@ which engine is installed and used, so switching to GPU offers a separate
 install; the two engines share one copy of the model files. The CPU engine
 starts speaking slightly sooner on short selections; the GPU engine
 synthesises long passages several times faster.
+`kokoro_onnx` stays loaded in the background for 10 idle minutes so later
+presses skip model loading (`speak --set .kokoro_onnx.keepWarm 0` to turn it
+off; a warm GPU engine holds about 1.3 GB of video memory).
 
 `espeak-ng` and Speech Dispatcher were removed in 1.3.0; a configuration
 that still names one is moved to Piper on first run.

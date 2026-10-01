@@ -16,6 +16,10 @@ Versioning.
   PyTorch provider moves its model to CUDA when available. `kokoro_onnx`
   installs a separate, hash-locked CUDA engine (`kokoro_onnx_gpu.lock`) that
   shares the verified model files with the CPU engine through hard links.
+- `kokoro_onnx` keeps its model loaded in a private background process for
+  `.kokoro_onnx.keepWarm` idle minutes (default 10, `0` disables), and splits
+  text into sentences with a short first clause. Warm, the GPU engine starts
+  speaking in about 0.2 s and the CPU engine in about 0.5–0.8 s.
 - Model files are digest-checked once per file identity (inode, size, mtime)
   instead of on every utterance.
 - Fix every managed shortcut being reported as a conflict on Lua-configured
