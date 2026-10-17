@@ -3,7 +3,7 @@
 All notable changes are documented here. This project follows Semantic
 Versioning.
 
-## 2.0.0 - Unreleased
+## 2.0.0 - 2026-10-16
 
 - **Breaking:** renamed to Omarchy TTS Local (`io.github.jagrat7.omarchy-tts-local`).
   Config, data, cache and runtime paths move from `omarchy-tts` to
