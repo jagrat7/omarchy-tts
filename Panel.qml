@@ -7,7 +7,7 @@ import "components"
 
 Panel {
   id: root
-  moduleName: "io.github.hikari112.tts"
+  moduleName: "io.github.jagrat7.omarchy-tts-local"
   ipcTarget: moduleName
   manageIpc: false
 
@@ -27,12 +27,78 @@ Panel {
   property string capturedChord: ""
   property string confirmInstall: ""
   property string confirmProvider: ""
-  property string confirmKeyRemove: ""
+  // Set when the confirmation is for switching a provider to a device whose
+  // engine is not installed yet; Continue then switches and installs.
+  property string confirmDevice: ""
+  property string confirmUninstall: ""
+  property var autoVerified: ({})
+  onActiveProviderChanged: {
+    var p = activeProvider
+    if (!p || p.status !== "untested" || autoVerified[p.name] || controller.verifying !== "") return
+    autoVerified[p.name] = true
+    controller.verifyProvider(p.name)
+  }
+  property string ocrConfirmUninstall: ""
+  // Only engines this plugin installs (an `# install:` header) can be removed
+  // here; system packages such as Tesseract belong to the package manager.
+  function canUninstall(m) {
+    return !!m && !!m.install
+      && ((m.installedDevices || []).length > 0 || ["ready", "untested", "failing"].indexOf(m.status) >= 0)
+  }
+  readonly property var providers: controller.info.providers || []
+  // Providers declaring the same `# family:` share one row as its variants:
+  // a slider picks among the installed ones and + lists the rest to install.
+  readonly property var providerEntries: {
+    var out = [], families = {}
+    for (var i = 0; i < providers.length; ++i) {
+      var p = providers[i]
+      if (!p.family) { out.push({ family: "", members: [p] }); continue }
+      if (!families[p.family]) { families[p.family] = { family: p.family, members: [] }; out.push(families[p.family]) }
+      families[p.family].members.push(p)
+    }
+    for (var j = 0; j < out.length; ++j)
+      out[j].members.sort(function(a, b) { return String(a.variant).localeCompare(String(b.variant)) })
+    return out
+  }
+  // A variant counts as installed if its engine for any device is present.
+  function variantInstalled(m) { return m.status !== "missing" || (m.installedDevices || []).length > 0 }
+  function variantSummary(m) {
+    var info = m.installInfo || {}
+    var size = String((info.cpu || info["default"] || {}).size || "").replace(/^about /, "~")
+    return [size, m.variantNote || ""].filter(function(part) { return part !== "" }).join(" · ")
+  }
+  property string addingFamily: ""
+  // A variant installed from the + list is followed until its job ends; one
+  // that installs and passes its test is offered as the one to switch to.
+  property string pendingVariant: ""
+  property bool pendingSeen: false
+  property string provedVariant: ""
+  readonly property bool setupBusy: controller.setupStarting || controller.setupJob.status === "starting"
+                                    || controller.setupJob.status === "running"
+  function installVariant(m) {
+    if (setupBusy) return
+    pendingVariant = m.name; pendingSeen = false; provedVariant = ""
+    // An engine built per device starts with the CPU one.
+    if ((m.installInfo || {}).cpu) controller.setDevice(m.name, "cpu", "install")
+    else controller.installProvider(m.name)
+  }
+  function chooseVariant(m) {
+    if (m.status === "failing") { confirmProvider = m.name; confirmInstall = m.install; return }
+    // Only another device's engine is present: switch to it with the variant.
+    if (m.status === "missing") controller.setDevice(m.name, m.installedDevices[0], "verify")
+    controller.selectProvider(m.name, m.status !== "ready")
+  }
+  // Switching to a device whose engine is present is immediate (and retested);
+  // one that needs a download asks first.
+  function requestDevice(provider, device) {
+    var present = (provider.installedDevices || []).indexOf(device) >= 0
+    if (provider.name === "kokoro_onnx" && !present) {
+      confirmProvider = provider.name; confirmDevice = device; confirmInstall = provider.install || "install"
+      return
+    }
+    controller.setDevice(provider.name, device, present ? "verify" : "")
+  }
   property string confirmVoiceRemove: ""
-  property string apiProvider: ""
-  property string ocrApiProvider: ""
-  property string ocrApiVendor: ""
-  property string ocrConfirmKeyRemove: ""
   property string ocrConfirmInstall: ""
   property string ocrConfirmEngine: ""
   readonly property var activeOcrEngine: {
@@ -40,7 +106,6 @@ Panel {
     for (var i = 0; i < all.length; ++i) if (all[i].name === (controller.info.ocr?.engine || "tesseract")) return all[i]
     return null
   }
-  property string apiVendor: ""
   property bool setupSkipped: false
   readonly property bool hasUsableProvider: {
     var all = controller.info.providers || []
@@ -132,52 +197,8 @@ Panel {
       if (all[i].name === controller.info.provider) return all[i]
     return null
   }
-  readonly property bool activeIsCloud: activeProvider && activeProvider.kind === "cloud"
   property string voiceSort: "lang"
 
-  // Cloud voice browser. Google alone lists two thousand voices; a dropdown
-  // is not a way to choose among them. Filters degrade to nothing for a
-  // provider whose list carries no metadata (ElevenLabs).
-  property string remoteFilter: ""
-  property string remoteLanguage: ""
-  property string remoteGender: ""
-  property string remoteFamily: ""
-  readonly property var remoteVoices: (controller.info.voices || []).filter(function (v) { return v && typeof v === "object" })
-  readonly property var remoteLanguages: {
-    var seen = {}, out = []
-    for (var i = 0; i < remoteVoices.length; ++i) { var l = String(remoteVoices[i].language || ""); if (l && !seen[l]) { seen[l] = true; out.push(l) } }
-    return out.sort()
-  }
-  readonly property var remoteFamilies: {
-    var seen = {}, out = []
-    for (var i = 0; i < remoteVoices.length; ++i) { var f = String(remoteVoices[i].family || ""); if (f && !seen[f]) { seen[f] = true; out.push(f) } }
-    return out.sort()
-  }
-  readonly property bool remoteHasGender: remoteVoices.some(function (v) { return v.gender === "female" || v.gender === "male" })
-  readonly property var filteredRemoteVoices: {
-    var q = remoteFilter.toLowerCase().trim(), out = []
-    for (var i = 0; i < remoteVoices.length; ++i) {
-      var v = remoteVoices[i]
-      if (remoteLanguage && String(v.language || "") !== remoteLanguage) continue
-      if (remoteGender && String(v.gender || "") !== remoteGender) continue
-      if (remoteFamily && String(v.family || "") !== remoteFamily) continue
-      if (q && String(v.label || "").toLowerCase().indexOf(q) < 0 && String(v.value).toLowerCase().indexOf(q) < 0) continue
-      out.push(v)
-    }
-    out.sort(function (a, b) { return String(a.language || "").localeCompare(String(b.language || ""))
-                                      || String(a.label || a.value).localeCompare(String(b.label || b.value)) })
-    return out
-  }
-  // Open on the language of the voice in use, so two thousand rows are not
-  // the first thing shown.
-  function openRemoteBrowser() {
-    remoteFilter = ""; remoteGender = ""; remoteFamily = ""; remoteLanguage = ""
-    var current = String(controller.info.voice || "")
-    for (var i = 0; i < remoteVoices.length; ++i)
-      if (remoteVoices[i].value === current) { remoteLanguage = String(remoteVoices[i].language || ""); break }
-    browsing = true
-  }
-  readonly property bool remoteProvider: !!(root.activeProvider && root.activeProvider.voices === "remote")
   readonly property var voiceSorts: [
     { key: "lang", label: "Language" },
     { key: "name", label: "Name" },
@@ -188,7 +209,7 @@ Panel {
   // Voices are stored as filenames like "en_US-amy-medium". That is an
   // identifier, not a name, and it is what the dropdown and the status line
   // were showing. Providers whose voice names are already words - kokoro's
-  // af_heart, OpenAI's alloy - are left exactly as they are.
+  // af_heart - are left exactly as they are.
   function titleCase(word) {
     var w = String(word)
     return w.length ? w.charAt(0).toUpperCase() + w.slice(1) : w
@@ -281,8 +302,7 @@ Panel {
   }
 
   // A provider addressed by filename (piper) sends plain keys and we make them
-  // readable here; one addressed by opaque id (ElevenLabs) sends the names its
-  // own service gave them, because only the service knows them.
+  // readable here; one that lists {value, label} pairs names its own voices.
   readonly property var voiceOptions: {
     var list = controller.info.voices || [], out = []
     for (var i = 0; i < list.length; ++i) {
@@ -358,10 +378,6 @@ Panel {
     if (opened) {
       restorePending = true
       controller.refresh(); controller.refreshBindings(); controller.refreshSetup(); controller.refreshDownload()
-    } else {
-      // Never retain a pasted credential in a hidden, persistent panel.
-      apiProvider = ""; apiVendor = ""
-      ocrApiProvider = ""; ocrApiVendor = ""
     }
   }
 
@@ -385,13 +401,17 @@ Panel {
         Qt.callLater(function() { sampleField.cursorPosition = 0 })
       }
     }
-    function onKeyResultChanged() {
-      if (controller.keyResult.ok) {
-        root.apiProvider = ""
-        root.apiVendor = ""
-        root.ocrApiProvider = ""
-        root.ocrApiVendor = ""
-      }
+  }
+  Connections {
+    target: controller
+    function onSetupJobChanged() {
+      if (root.pendingVariant === "") return
+      var status = controller.setupJob.status
+      if (status === "starting" || status === "running") { root.pendingSeen = true; return }
+      // A "done" left over from an earlier job is not this install finishing.
+      if (status === "done" && !root.pendingSeen) return
+      if (status === "done") { root.provedVariant = root.pendingVariant; root.addingFamily = "" }
+      root.pendingVariant = ""; root.pendingSeen = false
     }
   }
   onCurrentTabChanged: if (opened) controller.setConfig(".ui.lastTab", currentTab)
@@ -420,7 +440,6 @@ Panel {
         }
         if (event.key === Qt.Key_Escape) {
           if (voiceDropdown.popupOpen) voiceDropdown.close()
-          else if (remoteLanguageDropdown.popupOpen) remoteLanguageDropdown.close()
           else if (root.captureAction !== "") {
             root.captureAction = ""
             root.capturedChord = ""
@@ -464,11 +483,10 @@ Panel {
           Text { id: headerTitle; anchors.left: headerIcon.right; anchors.leftMargin: Style.space(8); anchors.verticalCenter: parent.verticalCenter; text: "Text to speech"; color: root.fg; font.family: root.ff; font.pixelSize: Style.font.subtitle }
           Text { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; // The shortcut is the whole point of the tool; the panel is where
                  // someone finds out what it is.
-                 text: { if (root.activeIsCloud) return "󰅟  Spoken text leaves this machine"
-                         var b = controller.bindings.bindings
+                 text: { var b = controller.bindings.bindings
                          if (b && b.selection && b.selection.chord) return b.selection.chord
                          return "on-demand accessibility" }
-                 color: root.activeIsCloud ? root.fg : root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
+                 color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
         }
         Row {
           width: parent.width; spacing: Style.space(14); visible: !root.needsSetup
@@ -505,166 +523,210 @@ Panel {
           Item {
             width: parent.width; height: providerHeader.implicitHeight
             PanelSectionHeader { id: providerHeader; text: "Speech provider"; foreground: root.fg }
-            Text { anchors.right: parent.right; text: "󰅟  Cloud provider"; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
           }
-          Repeater {
-            model: controller.info.providers || []
-            delegate: Rectangle {
+          Component {
+            id: providerRow
+            Rectangle {
+              id: entry
+              // One provider, or every variant of a family on one row.
               required property var modelData
-              readonly property bool selected: modelData.name === controller.info.provider
-              readonly property bool ready: modelData.status === "ready"
-              readonly property bool failing: modelData.status === "failing"
-              readonly property bool untested: modelData.status === "untested"
-              readonly property string cloudError: String((((modelData.usage || {}).lastRequest || {}).errorCode) || "")
+              readonly property bool isFamily: modelData.family !== ""
+              readonly property var installed: modelData.members.filter(root.variantInstalled)
+              readonly property var available: modelData.members.filter(function(m) { return !root.variantInstalled(m) })
+              readonly property var active: modelData.members.find(function(m) { return m.name === controller.info.provider }) || null
+              readonly property bool selected: active !== null
+              // The variant the row stands for: the one in use, else the best
+              // installed one, else the first that could be installed.
+              readonly property var p: active || installed.find(function(m) { return m.status === "ready" })
+                                       || installed[0] || modelData.members[0]
+              readonly property bool ready: p.status === "ready"
+              readonly property bool failing: p.status === "failing"
+              readonly property bool untested: p.status === "untested"
               // Installed means "present", which is not the same as usable.
-              // Unproven is not unusable. A provider that is installed, or a
-              // cloud one with a key, can be selected; only one proven unable
-              // to speak is refused. Requiring `ready` meant a freshly keyed
-              // cloud provider could never be turned on.
+              // Unproven is not unusable. A provider that is installed can be
+              // selected; only one proven unable to speak is refused.
               readonly property bool usable: ready || untested
-              readonly property bool cloud: modelData.kind === "cloud"
-              function activateRow() { if (usable) controller.selectProvider(modelData.name) }
+              readonly property bool adding: isFamily && root.addingFamily === modelData.family
+              readonly property var proved: isFamily ? (modelData.members.find(function(m) {
+                return m.name === root.provedVariant && m.status === "ready" && m.name !== controller.info.provider }) || null) : null
+              readonly property bool showDevices: (p.devices || []).length > 0 && root.variantInstalled(p)
+              readonly property bool showAdd: isFamily && available.length > 0
+              readonly property bool showUninstall: root.canUninstall(p)
+              function activateRow() { if (usable) controller.selectProvider(p.name, untested) }
               function activateAction() {
-                var row = this
-                if (row.cloud && row.failing && row.cloudError === "auth"
-                    && row.modelData.keySource === "env") {
-                  controller.error = (row.modelData.keyEnv || "The environment variable")
-                    + " supplies this key and overrides the system keyring. Update or unset it, restart Omarchy Shell, then Test again."
-                } else if (row.modelData.status === "keyerror") {
-                  controller.refresh()
-                } else if (row.cloud && row.failing && row.cloudError === "forbidden") {
-                  controller.error = "The service denied access. Check that the API is enabled for this project and that its permissions and billing are active, then Test again."
-                } else if (row.modelData.status === "nokey"
-                           || (row.cloud && row.failing && row.cloudError === "auth")) {
-                  root.apiProvider = row.modelData.name
-                  root.apiVendor = row.modelData.vendor || row.modelData.name
-                  controller.keyResult = ({ ok: false, message: "" })
-                } else if (row.failing && !row.cloud && row.modelData.install) {
-                  root.confirmProvider = row.modelData.name
-                  root.confirmInstall = row.modelData.install
-                } else if (row.failing || row.untested) {
-                  controller.verifyProvider(row.modelData.name)
-                } else if (row.cloud && row.modelData.keySource === "keyring") {
-                  root.confirmKeyRemove = row.modelData.name
+                if (isFamily && installed.length === 0) {
+                  root.addingFamily = adding ? "" : modelData.family
+                } else if (failing && p.install) {
+                  root.confirmProvider = p.name
+                  root.confirmInstall = p.install
+                } else if (failing || untested) {
+                  controller.verifyProvider(p.name)
                 } else {
-                  root.confirmProvider = row.modelData.name
-                  root.confirmInstall = row.modelData.install
+                  root.confirmProvider = p.name
+                  root.confirmInstall = p.install
                 }
               }
-              width: parent.width; height: providerCopy.implicitHeight + Style.space(12); radius: Style.space(6)
+              width: parent ? parent.width : 0; height: providerCopy.implicitHeight + Style.space(12); radius: Style.space(6)
               color: selected ? root.tint(0.10) : "transparent"; border.width: selected || activeFocus ? 1 : 0; border.color: activeFocus ? Color.accent : root.tint(0.45)
               activeFocusOnTab: usable
               Accessible.role: Accessible.RadioButton
-              Accessible.name: (modelData.title || modelData.name) + ", " + modelData.status
+              Accessible.name: (isFamily ? modelData.family + " " + (p.variant || "") : (p.title || p.name)) + ", " + p.status
               Accessible.checked: selected
               Accessible.onPressAction: activateRow()
               Keys.onSpacePressed: activateRow()
               Keys.onReturnPressed: activateRow()
               Keys.onEnterPressed: activateRow()
               Column {
-                id: providerCopy; z: 1; anchors.left: parent.left; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; anchors.leftMargin: Style.space(8); anchors.rightMargin: Style.space(8); spacing: 2
+                id: providerCopy; z: 1; anchors.left: parent.left; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; anchors.leftMargin: Style.space(8); anchors.rightMargin: Style.space(8); spacing: Style.space(4)
                 Item {
                   width: parent.width; height: providerName.implicitHeight
-                  Text { id: providerRadio; text: parent.parent.parent.selected ? "󰝥" : "󰝦"; color: parent.parent.parent.ready ? (parent.parent.parent.selected ? Color.accent : root.fg) : root.dim; font.family: root.ff; font.pixelSize: Style.font.body }
-                  Text { id: providerName; anchors.left: providerRadio.right; anchors.leftMargin: 8; textFormat: Text.PlainText; text: parent.parent.parent.modelData.title || parent.parent.parent.modelData.name; color: parent.parent.parent.usable ? root.fg : root.dim; font.family: root.ff; font.pixelSize: Style.font.body }
-                  Text { anchors.left: providerName.right; anchors.leftMargin: 6; anchors.baseline: providerName.baseline; textFormat: Text.PlainText; text: parent.parent.parent.modelData.kind; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
-                  Text { anchors.right: providerAction.left; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter; text: { var d = parent.parent.parent
-                            if (d.modelData.status === "keyerror") return "Keyring unavailable"
-                            if (d.failing) return d.cloudError === "auth" ? "API key rejected" : "Not working"
-                            if (d.untested) return "Untested"
-                            if (d.ready) return d.cloud ? (d.modelData.keySource === "keyring" ? "● Key stored" : "● Key available") : "● Ready"
-                            return d.modelData.status === "nokey" ? "No API key" : "Not installed" }
+                  Text { id: providerRadio; text: entry.selected ? "󰝥" : "󰝦"; color: entry.ready ? (entry.selected ? Color.accent : root.fg) : root.dim; font.family: root.ff; font.pixelSize: Style.font.body }
+                  Text { id: providerName; anchors.left: providerRadio.right; anchors.leftMargin: 8; textFormat: Text.PlainText; text: entry.isFamily ? entry.modelData.family : (entry.p.title || entry.p.name); color: entry.usable ? root.fg : root.dim; font.family: root.ff; font.pixelSize: Style.font.body }
+                  // With one variant there is no slider, so the name says which.
+                  Text { anchors.left: providerName.right; anchors.leftMargin: 6; anchors.baseline: providerName.baseline; visible: entry.isFamily && entry.installed.length > 0 && !(entry.selected && entry.installed.length > 1); textFormat: Text.PlainText; text: entry.p.variant || ""; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
+                  Text { anchors.right: providerAction.visible ? providerAction.left : parent.right; anchors.rightMargin: providerAction.visible ? 8 : 0; anchors.verticalCenter: parent.verticalCenter
+                    text: entry.failing ? "Not working" : entry.ready ? "● Ready" : ""
                     // urgent is otherwise reserved for Stop, but a backend that is
                     // present and cannot speak is a genuine fault, not an absence.
-                    color: { var d = parent.parent.parent
-                             if (d.failing) return Color.urgent
-                             if (d.ready) return Color.accent
-                             return root.dim }
+                    color: entry.failing ? Color.urgent : entry.ready ? Color.accent : root.dim
                     font.family: root.ff
                     font.pixelSize: Style.font.caption
                   }
                   InlineAction {
-                    id: providerAction; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; visible: !parent.parent.parent.ready || (parent.parent.parent.cloud && parent.parent.parent.modelData.keySource === "keyring")
-                    text: { var d = parent.parent.parent
-                            if (controller.verifying === d.modelData.name) return "Testing…"
-                            if (d.modelData.status === "keyerror") return "Retry"
-                            if (d.modelData.status === "nokey") return "Add key"
-                            // Only an actual auth rejection means the key is the
-                            // problem. Any other cloud failure is retestable, and
-                            // demanding a new key for one would be a dead end.
-                            if (d.cloud && d.failing && d.cloudError === "auth"
-                                && d.modelData.keySource === "env") return "Fix environment"
-                            if (d.cloud && d.failing && d.cloudError === "auth") return "Replace key"
-                            if (d.cloud && d.failing && d.cloudError === "forbidden") return "Fix access"
-                            if (d.failing && !d.cloud && d.modelData.install) return "Repair"
-                            if (d.failing || d.untested) return "Test"
-                            if (d.cloud && d.modelData.keySource === "keyring") return "Remove key"
+                    id: providerAction; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+                    visible: (!entry.ready && !entry.untested) || controller.verifying === entry.p.name
+                    text: { if (controller.verifying === entry.p.name) return "Testing…"
+                            if (entry.isFamily && entry.installed.length === 0) return entry.adding ? "Close" : "Install"
+                            if (entry.failing && entry.p.install) return "Repair"
+                            if (entry.failing) return "Retry"
                             return "Install" }
                     color: Color.accent
                     font.family: root.ff
                     font.pixelSize: Style.font.caption
-                    onTriggered: parent.parent.parent.activateAction()
+                    onTriggered: entry.activateAction()
                   }
                 }
-                Text { visible: parent.parent.cloud; textFormat: Text.PlainText; text: "󰅟  Sends spoken text to " + (parent.parent.modelData.vendor || parent.parent.modelData.name) + " · " + (parent.parent.modelData.model || "paid API"); color: root.fg; font.family: root.ff; font.pixelSize: Style.font.caption }
+                SegmentedControl {
+                  width: parent.width
+                  visible: entry.isFamily && entry.selected && entry.installed.length > 1
+                  options: entry.installed.map(function(m) { return { value: m.name, label: m.variant || m.name } })
+                  value: entry.p.name
+                  foreground: root.fg; fontFamily: root.ff
+                  onSelected: function(name) { root.chooseVariant(entry.installed.find(function(m) { return m.name === name })) }
+                }
+                Text { visible: entry.failing; width: parent.width; wrapMode: Text.WordWrap; text: "Installed, but it produced no audio when tested. Press Test to try again."; color: Color.urgent; font.family: root.ff; font.pixelSize: Style.font.caption }
+                Text { visible: entry.p.deprecated === true; width: parent.width; wrapMode: Text.WordWrap; text: "Compatibility provider retained for upgrades. Choose Piper for continued support and better speech quality."; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
+                // Where it runs, and adding or removing variants: only on the row in use.
                 Item {
-                  width: parent.width; height: cloudUsage.implicitHeight; visible: parent.parent.cloud && parent.parent.modelData.status !== "nokey"
-                  Text {
-                    id: cloudUsage; anchors.left: parent.left; anchors.right: refreshUsage.left; anchors.rightMargin: 8
-                    textFormat: Text.PlainText
-                    elide: Text.ElideRight; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption
-                    text: { var u = parent.parent.parent.modelData.usage || {}; var a = u.account || {}; var l = u.localObserved || {}; var r = (u.rateLimits || {}).requests || {}; var last = u.lastRequest || {}
-                            if (last.outcome === "error") return (last.errorCode === "concurrency_limit" ? "Concurrency limit reached" : last.errorCode === "rate_limit" ? "Rate limit reached" : last.errorCode === "quota" ? "Credits or billing limit reached" : "Last request failed") + (last.retryAfter ? " · retry after " + last.retryAfter : "")
-                            if (a.limit !== undefined) return (a.tier || "Plan") + " · " + a.used + " / " + a.limit + " characters" + (a.resetAt ? " · resets " + new Date(a.resetAt * 1000).toLocaleDateString() : "")
-                            if (r.remaining !== undefined) return r.remaining + (r.limit !== undefined ? " / " + r.limit : "") + " requests remain" + (r.reset ? " · resets " + r.reset : "")
-                            if (l.requests) return l.requests + " local requests · " + l.characters + " characters observed"
-                            return "Usage appears after the first request" }
+                  width: parent.width; height: Math.max(deviceRow.implicitHeight, lineActions.implicitHeight)
+                  visible: entry.selected && (entry.showDevices || entry.showAdd || entry.showUninstall)
+                  Row {
+                    id: deviceRow
+                    readonly property var devices: entry.p.devices || []
+                    visible: entry.showDevices
+                    spacing: 10
+                    Text { text: deviceRow.devices.length > 1 ? "Run on" : "Runs on"; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
+                    Text { visible: deviceRow.devices.length === 1; text: String(deviceRow.devices[0] || "").toUpperCase(); color: Color.accent; font.family: root.ff; font.pixelSize: Style.font.caption }
+                    Repeater {
+                      model: deviceRow.devices.length > 1 ? deviceRow.devices : []
+                      delegate: InlineAction {
+                        required property string modelData
+                        readonly property bool chosen: (entry.p.device || "cpu") === modelData
+                        text: (chosen ? "󰝥 " : "󰝦 ") + modelData.toUpperCase()
+                        color: chosen ? Color.accent : root.fg
+                        font.family: root.ff; font.pixelSize: Style.font.caption
+                        enabled: !chosen
+                        Accessible.checked: chosen
+                        onTriggered: root.requestDevice(entry.p, modelData)
+                      }
+                    }
                   }
-                  InlineAction {
-                    id: refreshUsage; anchors.right: parent.right; text: parent.parent.parent.modelData.refreshUsage === true ? (controller.refreshingUsage === parent.parent.parent.modelData.name ? "Refreshing…" : "Refresh usage") : "Updates after speech"
-                    color: parent.parent.parent.modelData.refreshUsage === true ? Color.accent : root.dim; font.family: root.ff; font.pixelSize: Style.font.caption
-                    enabled: parent.parent.parent.modelData.refreshUsage === true && controller.refreshingUsage === ""
-                    onTriggered: controller.refreshUsage(parent.parent.parent.modelData.name)
+                  Row {
+                    id: lineActions; anchors.right: parent.right; spacing: 12
+                    InlineAction {
+                      id: addVariant
+                      visible: entry.showAdd
+                      text: entry.adding ? "󰅖" : "󰐕"
+                      Accessible.name: entry.adding ? "Close" : "Add another " + entry.modelData.family + " engine"
+                      color: hovered || activeFocus ? Color.accent : root.dim; font.family: root.ff; font.pixelSize: Style.font.caption
+                      onTriggered: root.addingFamily = entry.adding ? "" : entry.modelData.family
+                    }
+                    InlineAction {
+                      id: providerUninstall
+                      visible: entry.showUninstall
+                      text: "󰆴"; Accessible.name: "Uninstall"; color: hovered || activeFocus ? Color.urgent : root.dim; font.family: root.ff; font.pixelSize: Style.font.caption
+                      onTriggered: root.confirmUninstall = entry.p.name
+                    }
                   }
                 }
-                Text { visible: parent.parent.failing; width: parent.width; wrapMode: Text.WordWrap; text: parent.parent.cloudError === "auth" ? (parent.parent.modelData.keySource === "env" ? "The environment API key was rejected. Update or unset it, restart Omarchy Shell, then test again." : "The API key was rejected. Remove it and add a valid key, then test again.") : parent.parent.cloudError === "forbidden" ? "The service denied access. Check API enablement, permissions, and billing, then test again." : (parent.parent.cloud ? "The last request did not complete. Press Test to check it again." : "Installed, but it produced no audio when tested. Press Test to try again."); color: Color.urgent; font.family: root.ff; font.pixelSize: Style.font.caption }
-                Text { visible: parent.parent.cloud && parent.parent.failing && parent.parent.cloudError === "auth" && parent.parent.modelData.keySource === "env"; width: parent.width; wrapMode: Text.WordWrap; textFormat: Text.PlainText; text: (parent.parent.modelData.keyEnv || "The environment variable") + " is currently authoritative; a key saved here cannot override it."; color: Color.urgent; font.family: root.ff; font.pixelSize: Style.font.caption }
-                Text { visible: parent.parent.modelData.deprecated === true; width: parent.width; wrapMode: Text.WordWrap; text: "Compatibility provider retained for upgrades. Choose Piper for continued support and better speech quality."; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
-                Text { visible: parent.parent.modelData.status === "keyerror"; width: parent.width; wrapMode: Text.WordWrap; text: "The system keyring is locked or unavailable. Unlock it, then press Retry."; color: Color.urgent; font.family: root.ff; font.pixelSize: Style.font.caption }
-                Text { visible: parent.parent.modelData.name === "kokoro" && !parent.parent.failing; text: "Heavy · slow first start after boot"; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
+                // Variants not installed yet, with what each costs.
+                Repeater {
+                  model: entry.adding ? entry.available : []
+                  delegate: Column {
+                    required property var modelData
+                    readonly property bool busy: root.pendingVariant === modelData.name && root.setupBusy
+                    width: parent.width; spacing: 2
+                    Item {
+                      width: parent.width; height: Math.max(variantLabel.implicitHeight, variantAction.implicitHeight)
+                      Text { id: variantLabel; anchors.verticalCenter: parent.verticalCenter; textFormat: Text.PlainText; text: parent.parent.modelData.variant || parent.parent.modelData.name; color: root.fg; font.family: root.ff; font.pixelSize: Style.font.caption }
+                      Text {
+                        anchors.left: variantLabel.right; anchors.leftMargin: 8; anchors.right: variantAction.left; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter
+                        elide: Text.ElideRight; textFormat: Text.PlainText
+                        text: parent.parent.busy ? "building · " + Number(controller.setupJob.progress || 0) + "%" : root.variantSummary(parent.parent.modelData)
+                        color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption
+                      }
+                      InlineAction {
+                        id: variantAction; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+                        text: parent.parent.busy ? "Cancel" : "Install"
+                        color: parent.parent.busy ? root.dim : Color.accent
+                        enabled: parent.parent.busy ? controller.setupCancellable : !root.setupBusy
+                        font.family: root.ff; font.pixelSize: Style.font.caption
+                        onTriggered: parent.parent.busy ? controller.cancelSetup() : root.installVariant(parent.parent.modelData)
+                      }
+                    }
+                    Rectangle {
+                      width: parent.width; height: 3; radius: 1.5; visible: parent.busy; color: Color.popups.border
+                      Rectangle { height: parent.height; radius: parent.radius; color: Color.accent
+                                  width: parent.width * Math.max(0.02, Math.min(1, Number(controller.setupJob.progress || 0) / 100)) }
+                    }
+                  }
+                }
+                Item {
+                  width: parent.width; height: provedText.implicitHeight; visible: entry.proved !== null
+                  Text { id: provedText; textFormat: Text.PlainText; text: "󰄬 " + (entry.proved ? (entry.proved.variant || entry.proved.name) : "") + " works"; color: Color.accent; font.family: root.ff; font.pixelSize: Style.font.caption }
+                  Row {
+                    anchors.right: parent.right; spacing: 12
+                    InlineAction { text: "Switch"; color: Color.accent; font.family: root.ff; font.pixelSize: Style.font.caption
+                                   onTriggered: { controller.selectProvider(entry.proved.name, false); root.provedVariant = "" } }
+                    InlineAction { text: "Later"; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption
+                                   onTriggered: root.provedVariant = "" }
+                  }
+                }
               }
               MouseArea { anchors.fill: parent; enabled: parent.usable; z: 0; cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor; onClicked: parent.activateRow() }
             }
           }
-          Rectangle {
-            width: parent.width; height: installCol.implicitHeight + 16; radius: 6; visible: root.confirmInstall !== ""; color: root.tint(0.08); border.width: 1; border.color: Color.popups.border
-            Column {
-              id: installCol; anchors.fill: parent; anchors.margins: 8; spacing: 6
-              Text { text: "Install or repair " + root.confirmProvider + "?"; color: root.fg; font.family: root.ff; font.pixelSize: Style.font.body }
-              Text { width: parent.width; text: "A complete replacement is prepared and tested before it becomes active. The current engine is restored if anything fails. Administrator approval may appear for system packages."; wrapMode: Text.WordWrap; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
-              Row { spacing: 8
-                Button { text: "Cancel"; bordered: true; focusable: true; onClicked: { root.confirmInstall = ""; root.confirmProvider = "" } }
-                Button { text: "Continue"; bordered: true; focusable: true; foreground: Color.accent; onClicked: { controller.installProvider(root.confirmProvider); root.confirmInstall = ""; root.confirmProvider = "" } }
-              }
+          Repeater { model: root.providerEntries; delegate: providerRow }
+          EngineConfirm {
+            width: parent.width
+            target: root.confirmInstall !== "" ? (root.providers.find(function(p) { return p.name === root.confirmProvider }) || null) : null
+            device: root.confirmDevice
+            foreground: root.fg; fontFamily: root.ff
+            onCancelled: { root.confirmInstall = ""; root.confirmProvider = ""; root.confirmDevice = "" }
+            onConfirmed: {
+              if (root.confirmDevice !== "") controller.setDevice(root.confirmProvider, root.confirmDevice, "install")
+              else controller.installProvider(root.confirmProvider)
+              root.confirmInstall = ""; root.confirmProvider = ""; root.confirmDevice = ""
             }
           }
-          Rectangle {
-            width: parent.width; height: keyRemoveRow.implicitHeight + 16; radius: 6
-            visible: root.confirmKeyRemove !== ""; color: root.tint(0.08)
-            border.width: 1; border.color: Color.popups.border
-            Row {
-              id: keyRemoveRow; anchors.fill: parent; anchors.margins: 8; spacing: 8
-              Text { text: "Remove the " + root.confirmKeyRemove + " API key?"; color: root.fg; font.family: root.ff; font.pixelSize: Style.font.body }
-              Button { text: "Cancel"; bordered: true; focusable: true; onClicked: root.confirmKeyRemove = "" }
-              Button { text: "Remove"; bordered: true; focusable: true; foreground: Color.urgent; onClicked: { controller.removeKey(root.confirmKeyRemove); root.confirmKeyRemove = "" } }
-            }
-          }
-          ApiKeyDialog {
-            id: speechKeyDialog
-            width: parent.width; visible: root.apiProvider !== ""
-            controller: controller; provider: root.apiProvider; vendor: root.apiVendor; foreground: root.fg
-            purpose: "speech"
-            onClosed: { root.apiProvider = ""; root.apiVendor = "" }
+          EngineConfirm {
+            mode: "uninstall"
+            width: parent.width
+            target: root.confirmUninstall !== "" ? (root.providers.find(function(p) { return p.name === root.confirmUninstall }) || null) : null
+            activeName: controller.info.provider || ""
+            foreground: root.fg; fontFamily: root.ff
+            onCancelled: root.confirmUninstall = ""
+            onConfirmed: function(uninstallTarget) { controller.uninstall(uninstallTarget); root.confirmUninstall = "" }
           }
           Text {
             width: parent.width
@@ -680,11 +742,8 @@ Panel {
         Column {
           width: parent.width; spacing: Style.space(10); visible: !root.needsSetup && root.currentTab === 1 && !root.browsing
           PanelSectionHeader { text: "Voice"; foreground: root.fg }
-          Dropdown { id: voiceDropdown; width: parent.width; showLabel: false; foreground: root.fg; visible: !(root.remoteProvider && root.voiceOptions.length > 40); options: root.voiceOptions.length ? root.voiceOptions : [{ label: "No voice installed", value: "" }]; value: controller.info.voice || ""; onValueChanged: if (value && value !== controller.info.voice && value !== "No voice installed") controller.setConfig(controller.info.voicePath || ".piper.voice", value) }
-          Button { width: parent.width; visible: root.remoteProvider && root.voiceOptions.length > 40; text: root.activeVoiceLabel() || "Choose a voice"; iconText: "󰍉"; bordered: true; focusable: true; foreground: root.fg; onClicked: root.openRemoteBrowser() }
+          Dropdown { id: voiceDropdown; width: parent.width; showLabel: false; foreground: root.fg; options: root.voiceOptions.length ? root.voiceOptions : [{ label: "No voice installed", value: "" }]; value: controller.info.voice || ""; onValueChanged: if (value && value !== controller.info.voice && value !== "No voice installed") controller.setConfig(controller.info.voicePath || ".piper.voice", value) }
           Button { width: parent.width; text: controller.info.voices?.length ? "Browse all voices" : "Download a voice"; iconText: "󰇚"; bordered: true; focusable: true; foreground: controller.info.voices?.length ? root.fg : Color.accent; visible: !root.activeProvider || root.activeProvider.voices === "downloadable"; onClicked: { root.browsing = true; root.voiceFilter = ""; controller.loadCatalogue() } }
-          Button { width: parent.width; visible: root.remoteProvider && root.remoteVoices.length > 0 && root.voiceOptions.length <= 40; text: "Browse " + root.remoteVoices.length + " voices"; iconText: "󰍉"; bordered: true; focusable: true; foreground: root.fg; onClicked: root.openRemoteBrowser() }
-          Button { width: parent.width; text: controller.refreshingVoices ? "Refreshing voices…" : "Refresh cloud voices"; iconText: "󰑐"; bordered: true; focusable: true; foreground: root.fg; visible: root.activeProvider && root.activeProvider.refreshVoices === true; enabled: controller.refreshingVoices === ""; onClicked: controller.refreshVoices(root.activeProvider.name) }
           Item {
             width: parent.width; height: speedHeader.implicitHeight
             PanelSectionHeader { id: speedHeader; text: "Speed"; foreground: root.fg }
@@ -745,7 +804,7 @@ Panel {
           }
         }
         Column {
-          width: parent.width; spacing: 8; visible: !root.needsSetup && root.currentTab === 1 && root.browsing && !root.remoteProvider
+          width: parent.width; spacing: 8; visible: !root.needsSetup && root.currentTab === 1 && root.browsing
           Item {
             width: parent.width; height: browseHeader.implicitHeight
             PanelSectionHeader { id: browseHeader; text: root.installedCount + " installed · " + ((controller.catalogue || []).length - root.installedCount) + " available"; foreground: root.fg }
@@ -834,93 +893,7 @@ Panel {
               Button { id: removeVoice; text: "Remove"; bordered: true; focusable: true; foreground: Color.urgent; onClicked: { controller.removeVoice(root.confirmVoiceRemove); root.confirmVoiceRemove = "" } }
             }
           }
-          Text { text: "Storage: ~/.local/share/omarchy-tts/voices/piper"; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
-        }
-
-        // Cloud voices -----------------------------------------------------
-        Column {
-          width: parent.width; spacing: 8; visible: !root.needsSetup && root.currentTab === 1 && root.browsing && root.remoteProvider
-          Item {
-            width: parent.width; height: remoteHeader.implicitHeight
-            PanelSectionHeader { id: remoteHeader; text: root.filteredRemoteVoices.length + " of " + root.remoteVoices.length + " voices"; foreground: root.fg }
-            InlineAction { anchors.right: parent.right; text: "Done"; color: Color.accent; font.family: root.ff; font.pixelSize: Style.font.caption; onTriggered: root.browsing = false }
-          }
-          TextField { id: remoteFilterField; width: parent.width; placeholderText: "Search by name"; text: root.remoteFilter; foreground: root.fg; onTextChanged: root.remoteFilter = text }
-          Dropdown {
-            id: remoteLanguageDropdown
-            width: parent.width; showLabel: false; foreground: root.fg; visible: root.remoteLanguages.length > 1
-            options: [{ label: "All languages", value: "" }].concat(root.remoteLanguages.map(function (l) { return { label: l, value: l } }))
-            value: root.remoteLanguage
-            onValueChanged: if (value !== root.remoteLanguage) root.remoteLanguage = value
-          }
-          Flow {
-            width: parent.width; spacing: 6; visible: root.remoteHasGender
-            Repeater {
-              model: [{ label: "Any voice", value: "" }, { label: "Female", value: "female" }, { label: "Male", value: "male" }]
-              delegate: Rectangle {
-                required property var modelData
-                readonly property bool active: root.remoteGender === modelData.value
-                width: genderChip.implicitWidth + 18; height: 24; radius: 4
-                color: active ? root.tint(0.16) : "transparent"; border.width: 1; border.color: activeFocus ? Color.accent : (active ? root.tint(0.5) : Color.popups.border)
-                activeFocusOnTab: true
-                Accessible.role: Accessible.RadioButton
-                Accessible.name: modelData.label
-                Accessible.checked: active
-                Accessible.onPressAction: root.remoteGender = modelData.value
-                Keys.onSpacePressed: root.remoteGender = modelData.value
-                Keys.onReturnPressed: root.remoteGender = modelData.value
-                Keys.onEnterPressed: root.remoteGender = modelData.value
-                Text { id: genderChip; anchors.centerIn: parent; text: parent.modelData.label; color: parent.active ? Color.accent : root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
-                MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.remoteGender = parent.modelData.value }
-              }
-            }
-          }
-          Flow {
-            width: parent.width; spacing: 6; visible: root.remoteFamilies.length > 1
-            Repeater {
-              model: [""].concat(root.remoteFamilies)
-              delegate: Rectangle {
-                required property string modelData
-                readonly property bool active: root.remoteFamily === modelData
-                width: familyChip.implicitWidth + 18; height: 24; radius: 4
-                color: active ? root.tint(0.16) : "transparent"; border.width: 1; border.color: activeFocus ? Color.accent : (active ? root.tint(0.5) : Color.popups.border)
-                activeFocusOnTab: true
-                Accessible.role: Accessible.RadioButton
-                Accessible.name: modelData || "All families"
-                Accessible.checked: active
-                Accessible.onPressAction: root.remoteFamily = modelData
-                Keys.onSpacePressed: root.remoteFamily = modelData
-                Keys.onReturnPressed: root.remoteFamily = modelData
-                Keys.onEnterPressed: root.remoteFamily = modelData
-                Text { id: familyChip; anchors.centerIn: parent; textFormat: Text.PlainText; text: parent.modelData || "All families"; color: parent.active ? Color.accent : root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
-                MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.remoteFamily = parent.modelData }
-              }
-            }
-          }
-          ListView {
-            width: parent.width; height: Style.space(220); clip: true; spacing: 2; model: root.filteredRemoteVoices
-            delegate: Rectangle {
-              required property var modelData
-              readonly property bool active: modelData.value === controller.info.voice
-              function activateRow() { if (!active) controller.setConfig(controller.info.voicePath || ".google.voice", modelData.value) }
-              width: ListView.view.width; height: 30; radius: 4; color: active ? root.tint(.10) : "transparent"
-              activeFocusOnTab: !active
-              border.width: activeFocus ? 1 : 0; border.color: Color.accent
-              Accessible.role: Accessible.RadioButton
-              Accessible.name: modelData.label || modelData.value
-              Accessible.checked: active
-              Accessible.onPressAction: activateRow()
-              Keys.onSpacePressed: activateRow()
-              Keys.onReturnPressed: activateRow()
-              Keys.onEnterPressed: activateRow()
-              Text { anchors.left: parent.left; anchors.right: remoteAction.left; anchors.leftMargin: 8; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter; elide: Text.ElideRight
-                     textFormat: Text.PlainText; text: parent.modelData.label || parent.modelData.value; color: root.fg; font.family: root.ff; font.pixelSize: Style.font.caption }
-              Text { id: remoteAction; anchors.right: parent.right; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter
-                     text: parent.active ? "󰄬 Active" : "Use"; color: parent.active ? Color.accent : root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
-              MouseArea { anchors.fill: parent; enabled: !parent.active; cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor; onClicked: parent.activateRow() }
-            }
-          }
-          Text { width: parent.width; wrapMode: Text.WordWrap; visible: root.filteredRemoteVoices.length === 0; text: "No voice matches. Clear a filter or refresh cloud voices."; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
+          Text { text: "Storage: ~/.local/share/omarchy-tts-local/voices/piper"; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
         }
 
         // Text -------------------------------------------------------------
@@ -965,59 +938,36 @@ Panel {
         Column {
           width: parent.width; spacing: 10; visible: !root.needsSetup && root.currentTab === 3
           PanelSectionHeader { text: "Reading the screen"; foreground: root.fg }
-          // The privacy line is computed, not written once: it has to say what
-          // the current engine actually does with a capture.
           Text { width: parent.width; wrapMode: Text.WordWrap
-                 textFormat: Text.PlainText
-                 text: root.activeOcrEngine && root.activeOcrEngine.kind === "cloud"
-                       ? "󰅟  Every capture, including whole-window and whole-screen reads, is sent as an image to " + (root.activeOcrEngine.vendor || root.activeOcrEngine.name) + "."
-                       : "Captures are read on this computer. Recognised text only leaves it when a cloud speech provider is active."
-                 color: root.activeOcrEngine && root.activeOcrEngine.kind === "cloud" ? root.fg : root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
+                 text: "Captures are read on this computer and never leave it."
+                 color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
           Item {
             width: parent.width; height: engineHeader.implicitHeight
             PanelSectionHeader { id: engineHeader; text: "Recognition engine"; foreground: root.fg }
-            Text { anchors.right: parent.right; text: "󰅟  Cloud engine"; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
           }
-          Repeater {
-            model: controller.info.ocr?.engines || []
-            delegate: Rectangle {
+          Component {
+            id: ocrRow
+            Rectangle {
               required property var modelData
               readonly property bool selected: modelData.name === (controller.info.ocr?.engine || "tesseract")
               readonly property bool ready: modelData.status === "ready"
               readonly property bool failing: modelData.status === "failing"
               readonly property bool untested: modelData.status === "untested"
-              readonly property string cloudError: String((((modelData.usage || {}).lastRequest || {}).errorCode) || "")
               readonly property bool usable: ready || untested
-              readonly property bool cloud: modelData.kind === "cloud"
-              function activateRow() { if (usable) controller.selectOcrEngine(modelData.name) }
+              function activateRow() { if (usable) controller.selectOcrEngine(modelData.name, untested) }
               function activateAction() {
                 var row = this
-                if (row.cloud && row.failing && row.cloudError === "auth"
-                    && row.modelData.keySource === "env") {
-                  controller.error = (row.modelData.keyEnv || "The environment variable")
-                    + " supplies this key and overrides the system keyring. Update or unset it, restart Omarchy Shell, then Test again."
-                } else if (row.modelData.status === "keyerror") {
-                  controller.refresh()
-                } else if (row.cloud && row.failing && row.cloudError === "forbidden") {
-                  controller.error = "The service denied access. Check that the API is enabled for this project and that its permissions and billing are active, then Test again."
-                } else if (row.modelData.status === "nokey"
-                           || (row.cloud && row.failing && row.cloudError === "auth")) {
-                  root.ocrApiProvider = row.modelData.name
-                  root.ocrApiVendor = row.modelData.vendor || row.modelData.name
-                  controller.keyResult = ({ ok: false, message: "" })
-                } else if (row.failing && !row.cloud && row.modelData.install) {
+                if (row.failing && row.modelData.install) {
                   root.ocrConfirmEngine = row.modelData.name
                   root.ocrConfirmInstall = row.modelData.install
                 } else if (row.failing || row.untested) {
                   controller.verifyOcrEngine(row.modelData.name)
-                } else if (row.cloud && row.modelData.keySource === "keyring") {
-                  root.ocrConfirmKeyRemove = row.modelData.name
                 } else {
                   root.ocrConfirmEngine = row.modelData.name
                   root.ocrConfirmInstall = row.modelData.install
                 }
               }
-              width: parent.width; height: engineCopy.implicitHeight + Style.space(12); radius: Style.space(6)
+              width: parent ? parent.width : 0; height: engineCopy.implicitHeight + Style.space(12); radius: Style.space(6)
               color: selected ? root.tint(0.10) : "transparent"; border.width: selected || activeFocus ? 1 : 0; border.color: activeFocus ? Color.accent : root.tint(0.45)
               activeFocusOnTab: usable
               Accessible.role: Accessible.RadioButton
@@ -1033,74 +983,56 @@ Panel {
                   width: parent.width; height: engineName.implicitHeight
                   Text { id: engineRadio; text: parent.parent.parent.selected ? "󰝥" : "󰝦"; color: parent.parent.parent.ready ? (parent.parent.parent.selected ? Color.accent : root.fg) : root.dim; font.family: root.ff; font.pixelSize: Style.font.body }
                   Text { id: engineName; anchors.left: engineRadio.right; anchors.leftMargin: 8; textFormat: Text.PlainText; text: parent.parent.parent.modelData.title || parent.parent.parent.modelData.name; color: parent.parent.parent.usable ? root.fg : root.dim; font.family: root.ff; font.pixelSize: Style.font.body }
-                  Text { anchors.left: engineName.right; anchors.leftMargin: 6; anchors.baseline: engineName.baseline; textFormat: Text.PlainText; text: parent.parent.parent.modelData.kind; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
-                  Text { anchors.right: engineAction.left; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter
+                  Text { anchors.right: engineAction.visible ? engineAction.left : parent.right; anchors.rightMargin: engineAction.visible ? 8 : 0; anchors.verticalCenter: parent.verticalCenter
                     text: { var d = parent.parent.parent
-                            if (d.modelData.status === "keyerror") return "Keyring unavailable"
-                            if (d.failing) return d.cloudError === "auth" ? "API key rejected" : "Not working"
-                            if (d.untested) return "Untested"
-                            if (d.ready) return d.cloud ? "● Key available" : "● Ready"
-                            return d.modelData.status === "nokey" ? "No API key" : "Not installed" }
+                            if (d.failing) return "Not working"
+                            return d.ready ? "● Ready" : "" }
                     color: { var d = parent.parent.parent; return d.failing ? Color.urgent : d.ready ? Color.accent : root.dim }
                     font.family: root.ff; font.pixelSize: Style.font.caption
                   }
                   InlineAction {
-                    id: engineAction; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; visible: !parent.parent.parent.ready || (parent.parent.parent.cloud && parent.parent.parent.modelData.keySource === "keyring")
+                    id: engineAction; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; visible: (!parent.parent.parent.ready && !parent.parent.parent.untested) || controller.verifying === "ocr:" + parent.parent.parent.modelData.name
                     text: { var d = parent.parent.parent
                             if (controller.verifying === "ocr:" + d.modelData.name) return "Testing…"
-                            if (d.modelData.status === "keyerror") return "Retry"
-                            if (d.modelData.status === "nokey") return "Add key"
-                            if (d.cloud && d.failing && d.cloudError === "auth"
-                                && d.modelData.keySource === "env") return "Fix environment"
-                            if (d.cloud && d.failing && d.cloudError === "auth") return "Replace key"
-                            if (d.cloud && d.failing && d.cloudError === "forbidden") return "Fix access"
-                            if (d.failing && !d.cloud && d.modelData.install) return "Repair"
-                            if (d.failing || d.untested) return "Test"
-                            if (d.cloud && d.modelData.keySource === "keyring") return "Remove key"
+                            if (d.failing && d.modelData.install) return "Repair"
+                            if (d.failing) return "Retry"
                             return "Install" }
                     color: Color.accent; font.family: root.ff; font.pixelSize: Style.font.caption
                     onTriggered: parent.parent.parent.activateAction()
                   }
                 }
+                InlineAction {
+                  anchors.right: parent.right
+                  visible: root.canUninstall(parent.parent.modelData)
+                  text: "󰆴"; Accessible.name: "Uninstall"; color: hovered || activeFocus ? Color.urgent : root.dim; font.family: root.ff; font.pixelSize: Style.font.caption
+                  onTriggered: root.ocrConfirmUninstall = parent.parent.modelData.name
+                }
                 Text { width: parent.width; wrapMode: Text.WordWrap; textFormat: Text.PlainText; text: parent.parent.modelData.desc || ""; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
-                Text { visible: parent.parent.cloud; textFormat: Text.PlainText; text: "󰅟  Sends screenshots to " + (parent.parent.modelData.vendor || parent.parent.modelData.name); color: root.fg; font.family: root.ff; font.pixelSize: Style.font.caption }
-                Text { visible: parent.parent.failing; width: parent.width; wrapMode: Text.WordWrap; text: parent.parent.cloudError === "auth" ? (parent.parent.modelData.keySource === "env" ? "The environment API key was rejected. Update or unset it, restart Omarchy Shell, then test again." : "The API key was rejected. Remove it and add a valid key, then test again.") : parent.parent.cloudError === "forbidden" ? "The service denied access. Check API enablement, permissions, and billing, then test again." : (parent.parent.cloud ? "The last request did not complete. Press Test to check it again." : "Installed, but it could not read the test image. Press Test to try again."); color: Color.urgent; font.family: root.ff; font.pixelSize: Style.font.caption }
-                Text { visible: parent.parent.cloud && parent.parent.failing && parent.parent.cloudError === "auth" && parent.parent.modelData.keySource === "env"; width: parent.width; wrapMode: Text.WordWrap; textFormat: Text.PlainText; text: (parent.parent.modelData.keyEnv || "The environment variable") + " is currently authoritative; a key saved here cannot override it."; color: Color.urgent; font.family: root.ff; font.pixelSize: Style.font.caption }
-                Text { visible: parent.parent.modelData.status === "keyerror"; width: parent.width; wrapMode: Text.WordWrap; text: "The system keyring is locked or unavailable. Unlock it, then press Retry."; color: Color.urgent; font.family: root.ff; font.pixelSize: Style.font.caption }
+                Text { visible: parent.parent.failing; width: parent.width; wrapMode: Text.WordWrap; text: "Installed, but it could not read the test image. Press Test to try again."; color: Color.urgent; font.family: root.ff; font.pixelSize: Style.font.caption }
               }
               MouseArea { anchors.fill: parent; enabled: parent.usable; z: 0; cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor; onClicked: parent.activateRow() }
             }
           }
-          Rectangle {
-            width: parent.width; height: ocrInstallCol.implicitHeight + 16; radius: 6; visible: root.ocrConfirmInstall !== ""; color: root.tint(0.08); border.width: 1; border.color: Color.popups.border
-            Column {
-              id: ocrInstallCol; anchors.fill: parent; anchors.margins: 8; spacing: 6
-              Text { text: "Install " + root.ocrConfirmEngine + "?"; color: root.fg; font.family: root.ff; font.pixelSize: Style.font.body }
-              Text { width: parent.width; text: root.ocrConfirmEngine === "easyocr" ? "About 6 GB of disk in a private Python environment, and several seconds of model loading on every capture. Worth it for stylised or low-contrast text the default cannot read." : "The required packages will be installed for you."; wrapMode: Text.WordWrap; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
-              Row { spacing: 8
-                Button { text: "Cancel"; bordered: true; focusable: true; onClicked: { root.ocrConfirmInstall = ""; root.ocrConfirmEngine = "" } }
-                Button { text: "Install"; bordered: true; focusable: true; foreground: Color.accent; onClicked: { controller.installProvider(root.ocrConfirmEngine); root.ocrConfirmInstall = ""; root.ocrConfirmEngine = "" } }
-              }
-            }
+          Column {
+            width: parent.width; spacing: Style.space(4)
+            Repeater { model: controller.info.ocr?.engines || []; delegate: ocrRow }
           }
-          Rectangle {
-            width: parent.width; height: ocrKeyRemoveRow.implicitHeight + 16; radius: 6
-            visible: root.ocrConfirmKeyRemove !== ""; color: root.tint(0.08)
-            border.width: 1; border.color: Color.popups.border
-            Row {
-              id: ocrKeyRemoveRow; anchors.fill: parent; anchors.margins: 8; spacing: 8
-              Text { text: "Remove the " + root.ocrConfirmKeyRemove + " API key?"; color: root.fg; font.family: root.ff; font.pixelSize: Style.font.body }
-              Button { text: "Cancel"; bordered: true; focusable: true; onClicked: root.ocrConfirmKeyRemove = "" }
-              Button { text: "Remove"; bordered: true; focusable: true; foreground: Color.urgent; onClicked: { controller.removeKey(root.ocrConfirmKeyRemove); root.ocrConfirmKeyRemove = "" } }
-            }
+          EngineConfirm {
+            width: parent.width
+            target: root.ocrConfirmInstall !== "" ? ((controller.info.ocr?.engines || []).find(function(e) { return e.name === root.ocrConfirmEngine }) || null) : null
+            foreground: root.fg; fontFamily: root.ff
+            onCancelled: { root.ocrConfirmInstall = ""; root.ocrConfirmEngine = "" }
+            onConfirmed: { controller.installProvider(root.ocrConfirmEngine); root.ocrConfirmInstall = ""; root.ocrConfirmEngine = "" }
           }
-          ApiKeyDialog {
-            id: ocrKeyDialog
-            width: parent.width; visible: root.ocrApiProvider !== ""
-            controller: controller; provider: root.ocrApiProvider; vendor: root.ocrApiVendor; foreground: root.fg
-            purpose: "ocr"
-            sends: "Screenshots of captured regions, windows or screens, and a test image"
-            onClosed: { root.ocrApiProvider = ""; root.ocrApiVendor = "" }
+          EngineConfirm {
+            mode: "uninstall"
+            width: parent.width
+            target: root.ocrConfirmUninstall !== "" ? ((controller.info.ocr?.engines || []).find(function(e) { return e.name === root.ocrConfirmUninstall }) || null) : null
+            activeName: controller.info.ocr?.engine || ""
+            inUseWarning: "This is the OCR engine in use. Pick another one afterwards or screen reading will stop."
+            foreground: root.fg; fontFamily: root.ff
+            onCancelled: root.ocrConfirmUninstall = ""
+            onConfirmed: function(uninstallTarget) { controller.uninstall(uninstallTarget); root.ocrConfirmUninstall = "" }
           }
           Text {
             width: parent.width
@@ -1278,7 +1210,8 @@ Panel {
             text: "These shortcuts already work; they were written by hand rather than by this panel. Taking them over lets you change them here. Nothing is duplicated."
             color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption
           }
-          Text { width: parent.width; wrapMode: Text.WordWrap; text: "Only the marked omarchy-tts block in bindings.lua is managed. Every write is backed up and rolled back if Hyprland reports an error."; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
+          Text { width: parent.width; visible: controller.bindings.legacy === true; wrapMode: Text.WordWrap; text: "These shortcuts still point at the plugin's old location from before it was renamed. Apply changes to update them."; color: Color.urgent; font.family: root.ff; font.pixelSize: Style.font.caption }
+          Text { width: parent.width; wrapMode: Text.WordWrap; text: "Only the marked omarchy-tts-local block in bindings.lua is managed. Every write is backed up and rolled back if Hyprland reports an error."; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
           Text { width: parent.width; visible: root.realConflicts.length > 0; wrapMode: Text.WordWrap; text: "Choose different shortcuts for: " + root.realConflicts.join(", "); color: Color.urgent; font.family: root.ff; font.pixelSize: Style.font.caption }
         }
 
@@ -1300,13 +1233,13 @@ Panel {
           Item {
             width: parent.width; height: testHeader.implicitHeight
             PanelSectionHeader { id: testHeader; text: "Test"; foreground: root.fg }
-            Text { anchors.right: parent.right; textFormat: Text.PlainText; text: root.activeIsCloud ? "󰅟  Sample sent to " + (root.activeProvider.vendor || root.activeProvider.name) : "Runs locally"; color: root.activeIsCloud ? root.fg : root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
+            Text { anchors.right: parent.right; text: "Runs locally"; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
           }
           Row { width: parent.width; spacing: 8
             TextField { id: sampleField; width: parent.width - testButton.width - 8; text: root.sampleText; maximumLength: 4096; foreground: root.fg; selectByMouse: true; onTextChanged: root.sampleText = text; onEditingFinished: controller.setConfig(".ui.sampleText", text) }
             Button { id: testButton; width: 96; text: controller.speaking ? "Stop" : "Speak"; iconText: controller.speaking ? "󰓛" : "󰐊"; bordered: true; focusable: true; foreground: controller.speaking ? Color.urgent : root.fg; accent: controller.speaking ? Color.urgent : Color.accent; onClicked: controller.speaking ? controller.stop() : controller.speak(root.sampleText) }
           }
-          Text { width: parent.width; elide: Text.ElideRight; textFormat: Text.PlainText; text: (controller.speaking ? "● Active · " : "") + ((root.activeProvider ? (root.activeProvider.title || root.activeProvider.name) : controller.info.provider) || "") + (controller.info.voice ? " · " + root.activeVoiceLabel() : "") + (root.rateSupported ? " · " + root.rateValue.toFixed(2) + "×" : "") + (controller.info.maxChars > 0 ? " · ≤" + controller.info.maxChars + " chars" : ""); color: controller.speaking ? Color.accent : root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
+          Text { width: parent.width; elide: Text.ElideRight; textFormat: Text.PlainText; text: (controller.speaking ? "● Active · " : "") + ((root.activeProvider ? (root.activeProvider.title || root.activeProvider.name) : controller.info.provider) || "") + (root.activeProvider && root.activeProvider.device ? " · " + root.activeProvider.device.toUpperCase() : "") + (controller.info.voice ? " · " + root.activeVoiceLabel() : "") + (root.rateSupported ? " · " + root.rateValue.toFixed(2) + "×" : "") + (controller.info.maxChars > 0 ? " · ≤" + controller.info.maxChars + " chars" : ""); color: controller.speaking ? Color.accent : root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
           Text { width: parent.width; visible: controller.error !== ""; textFormat: Text.PlainText; text: controller.error; wrapMode: Text.WordWrap; color: Color.urgent; font.family: root.ff; font.pixelSize: Style.font.caption }
         }
       }

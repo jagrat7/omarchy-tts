@@ -3,6 +3,7 @@ import QtQuick
 Text {
   id: root
   signal triggered()
+  readonly property bool hovered: pointer.containsMouse
 
   textFormat: Text.PlainText
   activeFocusOnTab: visible && enabled
@@ -16,7 +17,9 @@ Text {
   Keys.onEnterPressed: if (root.enabled) root.triggered()
 
   MouseArea {
+    id: pointer
     anchors.fill: parent
+    hoverEnabled: true
     enabled: root.enabled
     cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
     onClicked: root.triggered()

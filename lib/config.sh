@@ -2,6 +2,22 @@
 # Configuration helpers shared by the CLI tools.  All writers go through an
 # atomic replace so the QML panel can never observe half-written JSON.
 
+# The plugin was renamed from omarchy-tts. Move its config, data and cache
+# directories to the new name once, before anything creates the new ones, so
+# installed engines and voices are kept. A destination that already exists is
+# never merged into or replaced; rename(2) keeps this safe when two tools race.
+# speak-setup and speak-bindings do the same in Python.
+tts_migrate_legacy_dirs() {
+  local base
+  for base in "${XDG_CONFIG_HOME:-$HOME/.config}" "${XDG_DATA_HOME:-$HOME/.local/share}" \
+              "${XDG_CACHE_HOME:-$HOME/.cache}"; do
+    if [[ ( -e "$base/omarchy-tts" || -L "$base/omarchy-tts" ) &&
+          ! -e "$base/omarchy-tts-local" && ! -L "$base/omarchy-tts-local" ]]; then
+      mv -T -n -- "$base/omarchy-tts" "$base/omarchy-tts-local" 2>/dev/null || true
+    fi
+  done
+}
+
 tts_config_file() {
   # Atomic replacement of a symlink path severs dotfile-manager links. Resolve
   # an existing link and replace its target instead; ordinary paths are left
@@ -52,16 +68,13 @@ tts_config_init_unlocked() {
     tmp="$(mktemp "${config_file}.XXXXXX")" || return 1
     if ! cat >"$tmp" <<'JSON'
 {
-  "schemaVersion": 4,
+  "schemaVersion": 5,
   "provider": "piper",
   "rate": 1.0,
   "maxChars": 0,
   "piper": { "voice": "en_US-amy-medium" },
-  "openai": { "voice": "alloy", "model": "gpt-4o-mini-tts" },
-  "elevenlabs": { "model": "eleven_flash_v2_5" },
-  "kokoro": { "voice": "af_heart" },
-  "gemini": { "voice": "Kore", "model": "gemini-2.5-flash-preview-tts", "api": "vertex" },
-  "google": { "voice": "" },
+  "kokoro": { "voice": "af_heart", "device": "cpu" },
+  "kokoro_onnx": { "voice": "af_heart", "device": "cpu", "keepWarm": 10 },
   "ocr": { "engine": "tesseract", "langs": "eng", "minConfidence": 60 },
   "sanitizer": {
     "urls": "domain",
@@ -91,11 +104,10 @@ JSON
   # command, including --stop, fail during migration.
   if ! jq -e '
       type == "object"
-      and ([.piper,.openai,.elevenlabs,.kokoro,.gemini,.google,.ocr,.sanitizer,.ui]
+      and ([.piper,.kokoro,.kokoro_onnx,.ocr,.sanitizer,.ui]
            | all(. == null or type == "object"))
       and (.ocr == null or (.ocr.tesseract == null or (.ocr.tesseract|type) == "object"))
       and (.ocr == null or (.ocr.easyocr == null or (.ocr.easyocr|type) == "object"))
-      and (.ocr == null or (.ocr.openai == null or (.ocr.openai|type) == "object"))
       and (.ocr == null or (.ocr.engine|type) != "string"
            or .ocr[.ocr.engine] == null or (.ocr[.ocr.engine]|type) == "object")
     ' "$config_file" >/dev/null 2>&1; then
@@ -107,35 +119,29 @@ JSON
 
   # Additive, type-safe migration. Valid user values win; malformed leaves are
   # normalized individually instead of taking the entire control plane down.
+  # Providers and OCR engines that no longer exist (the retired cloud services
+  # and espeak/spd) fall back to the local defaults, and their settings go.
   tmp="$(mktemp "${config_file}.XXXXXX")" || return 1
   if jq '
-    (if (.schemaVersion|type) == "number" then .schemaVersion else 0 end) as $previousSchema
-    | .schemaVersion = 4
+    .schemaVersion = 5
     | .provider = (if (.provider|type) == "string" and (.provider|test("^[A-Za-z0-9._-]+$")) then .provider else "piper" end)
-    | .provider = (if .provider == "espeak-ng" or .provider == "spd" then "piper" else .provider end)
+    | .provider = (if .provider | IN("espeak-ng", "spd", "openai", "elevenlabs", "gemini", "google") then "piper" else .provider end)
+    | del(.openai, .elevenlabs, .gemini, .google)
     | .piper = (if (.piper|type) == "object" then .piper else {} end)
-    | .openai = (if (.openai|type) == "object" then .openai else {} end)
-    | .elevenlabs = (if (.elevenlabs|type) == "object" then .elevenlabs else {} end)
     | .kokoro = (if (.kokoro|type) == "object" then .kokoro else {} end)
-    | .gemini = (if (.gemini|type) == "object" then .gemini else {} end)
-    | .google = (if (.google|type) == "object" then .google else {} end)
+    | .kokoro_onnx = (if (.kokoro_onnx|type) == "object" then .kokoro_onnx else {} end)
     | .ocr = (if (.ocr|type) == "object" then .ocr else {} end)
     | .sanitizer = (if (.sanitizer|type) == "object" then .sanitizer else {} end)
     | .ui = (if (.ui|type) == "object" then .ui else {} end)
     | .piper.voice = (if (.piper.voice|type) == "string" and (.piper.voice|test("^[A-Za-z0-9._+-]+$")) then .piper.voice else "en_US-amy-medium" end)
-    | .openai.voice = (if (.openai.voice|type) == "string" and (.openai.voice|test("^[A-Za-z0-9._+-]+$")) then .openai.voice else "alloy" end)
-    | .openai.model = (if (.openai.model|type) == "string" and (.openai.model|test("^[A-Za-z0-9._-]+$")) then .openai.model else "gpt-4o-mini-tts" end)
-    | .elevenlabs.model = (if (.elevenlabs.model|type) == "string" and (.elevenlabs.model|test("^[A-Za-z0-9._-]+$")) then .elevenlabs.model else "eleven_flash_v2_5" end)
-    | if $previousSchema < 3 and .elevenlabs.model == "eleven_turbo_v2_5"
-      then .elevenlabs.model = "eleven_flash_v2_5" else . end
-    | if (.elevenlabs.voiceId|type) == "string" and (.elevenlabs.voiceId|test("^[A-Za-z0-9._+-]+$"))
-      then . else del(.elevenlabs.voiceId) end
     | .kokoro.voice = (if (.kokoro.voice|type) == "string" and (.kokoro.voice|test("^[A-Za-z0-9._+-]+$")) then .kokoro.voice else "af_heart" end)
-    | .gemini.voice = (if (.gemini.voice|type) == "string" and (.gemini.voice|test("^[A-Za-z]+$")) then .gemini.voice else "Kore" end)
-    | .gemini.model = (if (.gemini.model|type) == "string" and (.gemini.model|test("^[A-Za-z0-9._-]+$")) then .gemini.model else "gemini-2.5-flash-preview-tts" end)
-    | .gemini.api = (if .gemini.api == "developer" or .gemini.api == "vertex" then .gemini.api else "vertex" end)
-    | .google.voice = (if (.google.voice|type) == "string" and (.google.voice|test("^[A-Za-z0-9._+-]*$")) then .google.voice else "" end)
+    | .kokoro.device = (if .kokoro.device == "gpu" then "gpu" else "cpu" end)
+    | .kokoro_onnx.voice = (if (.kokoro_onnx.voice|type) == "string" and (.kokoro_onnx.voice|test("^[a-z]{2}_[a-z]+$")) then .kokoro_onnx.voice else "af_heart" end)
+    | .kokoro_onnx.device = (if .kokoro_onnx.device == "gpu" then "gpu" else "cpu" end)
+    | .kokoro_onnx.keepWarm = (if (.kokoro_onnx.keepWarm|type)=="number" and .kokoro_onnx.keepWarm>=0 and .kokoro_onnx.keepWarm<=240 then (.kokoro_onnx.keepWarm|floor) else 10 end)
     | .ocr.engine = (if (.ocr.engine|type) == "string" and (.ocr.engine|test("^[A-Za-z0-9._-]+$")) then .ocr.engine else "tesseract" end)
+    | .ocr.engine = (if .ocr.engine == "openai" or .ocr.engine == "google" then "tesseract" else .ocr.engine end)
+    | del(.ocr.openai, .ocr.google)
     | .ocr.engine as $ocrEngine
     | .ocr[$ocrEngine] = (if (.ocr[$ocrEngine]|type) == "object" then .ocr[$ocrEngine] else {} end)
     | .ocr.langs = (if (.ocr.langs|type) == "string" and (.ocr.langs|test("^[A-Za-z0-9_+.-]+$")) then .ocr.langs else "eng" end)
@@ -143,13 +149,12 @@ JSON
     | .ocr.tesseract.langs = (if (.ocr.tesseract.langs|type) == "string" and (.ocr.tesseract.langs|test("^[A-Za-z0-9_+.-]+$")) then .ocr.tesseract.langs else .ocr.langs end)
     | .ocr.easyocr = (if (.ocr.easyocr|type) == "object" then .ocr.easyocr else {} end)
     | .ocr.easyocr.langs = (if (.ocr.easyocr.langs|type) == "string" and (.ocr.easyocr.langs|test("^[A-Za-z0-9_+.-]+$")) then .ocr.easyocr.langs else "eng" end)
-    | .ocr.openai = (if (.ocr.openai|type) == "object" then .ocr.openai else {} end)
-    | .ocr.openai.model = (if (.ocr.openai.model|type) == "string" and (.ocr.openai.model|test("^[A-Za-z0-9._-]+$")) then .ocr.openai.model else "gpt-4.1-mini" end)
     | .sanitizer.urls = (if .sanitizer.urls == "link" then "link" else "domain" end)
     | .sanitizer.inlineCode = (if (.sanitizer.inlineCode|type) == "boolean" then .sanitizer.inlineCode else true end)
     | .sanitizer.announceCodeBlocks = (if (.sanitizer.announceCodeBlocks|type) == "boolean" then .sanitizer.announceCodeBlocks else true end)
     | .sanitizer.stripMarkdown = (if (.sanitizer.stripMarkdown|type) == "boolean" then .sanitizer.stripMarkdown else true end)
     | .sanitizer.expandUnits = (if (.sanitizer.expandUnits|type) == "boolean" then .sanitizer.expandUnits else true end)
+    | del(.ui.collapsed)
     | .ui.sampleText = (if (.ui.sampleText|type) == "string" then .ui.sampleText[0:4096] else "Highlight any text and press the key. This is how it sounds right now." end)
     | .rate = (if (.rate|type)=="number" and .rate>=0.25 and .rate<=4 then .rate else 1.0 end)
     | .maxChars = (if (.maxChars|type)=="number" and .maxChars>=0 and .maxChars<=1048576 then (.maxChars|floor) else 0 end)
@@ -181,19 +186,20 @@ tts_config_set_unlocked() { # jq path, JSON-or-string value
     engine="${BASH_REMATCH[1]}"
   fi
   case "$path" in
-    .provider|.rate|.maxChars|.piper.voice|.openai.voice|.elevenlabs.voiceId|.kokoro.voice|\
-    .gemini.voice|.gemini.api|.google.voice|.ocr.engine|.ocr.langs|.ocr.tesseract.langs|.ocr.easyocr.langs|.ocr.minConfidence|\
+    .provider|.rate|.maxChars|.piper.voice|.kokoro.voice|\
+    .kokoro.device|.kokoro_onnx.voice|.kokoro_onnx.device|.kokoro_onnx.keepWarm|\
+    .ocr.engine|.ocr.langs|.ocr.tesseract.langs|.ocr.easyocr.langs|.ocr.minConfidence|\
     .sanitizer.urls|.sanitizer.inlineCode|.sanitizer.announceCodeBlocks|\
     .sanitizer.stripMarkdown|.sanitizer.expandUnits|.ui.lastTab|.ui.sampleText) ;;
     *) [[ -n "$engine" ]] || return 2 ;;
   esac
   case "$path" in
     .provider) [[ "$value" =~ ^[A-Za-z0-9._-]+$ ]] || return 3 ;;
-    .piper.voice|.openai.voice|.kokoro.voice)
+    .piper.voice|.kokoro.voice)
       [[ "$value" =~ ^[A-Za-z0-9._+-]+$ ]] || return 3 ;;
-    .gemini.voice) [[ "$value" =~ ^[A-Za-z]+$ ]] || return 3 ;;
-    .elevenlabs.voiceId|.google.voice)
-      [[ "$value" =~ ^[A-Za-z0-9._+-]*$ ]] || return 3 ;;
+    .kokoro_onnx.voice) [[ "$value" =~ ^[a-z]{2}_[a-z]+$ ]] || return 3 ;;
+    .kokoro.device|.kokoro_onnx.device) [[ "$value" == cpu || "$value" == gpu ]] || return 3 ;;
+    .kokoro_onnx.keepWarm) [[ "$value" =~ ^[0-9]{1,3}$ ]] && [[ "$value" -le 240 ]] || return 3 ;;
     .rate)
       [[ "$value" =~ ^(0?[.][0-9]+|[1-3]([.][0-9]+)?|4([.]0+)?)$ ]] || return 3
       awk -v value="$value" 'BEGIN { exit !(value >= 0.25 && value <= 4.0) }' || return 3 ;;
@@ -204,7 +210,6 @@ tts_config_set_unlocked() { # jq path, JSON-or-string value
       [[ "$value" =~ ^[0-9]+$ ]] &&
         awk -v value="$value" 'BEGIN { exit !(value <= 100) }' || return 3 ;;
     .ocr.engine) [[ "$value" =~ ^[A-Za-z0-9._-]+$ ]] || return 3 ;;
-    .gemini.api) [[ "$value" == vertex || "$value" == developer ]] || return 3 ;;
     .ocr.langs|*.langs) [[ "$value" =~ ^[A-Za-z0-9_+.-]+$ ]] || return 3 ;;
     .sanitizer.urls) [[ "$value" == domain || "$value" == link ]] || return 3 ;;
     .sanitizer.inlineCode|.sanitizer.announceCodeBlocks|.sanitizer.stripMarkdown|.sanitizer.expandUnits)
@@ -218,6 +223,7 @@ tts_config_set_unlocked() { # jq path, JSON-or-string value
       '.ocr[$engine] = (if (.ocr[$engine]|type) == "object" then .ocr[$engine] else {} end)
        | .ocr[$engine].langs = $value' "$config_file" >"$tmp"
   elif [[ "$path" == .rate || "$path" == .maxChars || "$path" == .ocr.minConfidence ||
+          "$path" == .kokoro_onnx.keepWarm ||
           "$path" == .ui.lastTab || "$path" == .sanitizer.inlineCode ||
           "$path" == .sanitizer.announceCodeBlocks || "$path" == .sanitizer.stripMarkdown ||
           "$path" == .sanitizer.expandUnits ]]; then

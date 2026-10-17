@@ -1,0 +1,121 @@
+#!/usr/bin/env bash
+# desc: Kokoro quality, fast start. Runs on CPU or GPU.
+# title: Kokoro ONNX
+# family: Kokoro
+# variant: ONNX
+# variantnote: fast start
+# installsize-cpu: about 480 MB
+# installnote-cpu: Engine and 27 English voices.
+# installsize-gpu: about 2.3 GB
+# installnote-gpu: Includes CUDA libraries. Needs an NVIDIA GPU; uses about 1.3 GB of VRAM while loaded.
+# probe: d="${TTS_DEVICE:-$(jq -r '.kokoro_onnx.device // "cpu"' "$TTS_CONFIG" 2>/dev/null)}"; e=kokoro_onnx; [[ "$d" == gpu ]] && e=kokoro_onnx_gpu; dir="${TTS_DATA_DIR:-$HOME/.local/share/omarchy-tts-local}/engines/$e"; [[ -x "$dir/bin/python" && -s "$dir/models/kokoro-v1.0.onnx" && -s "$dir/models/voices-v1.0.bin" && "$(cat "$dir/.lock-sha256" 2>/dev/null)" == "$(sha256sum "$TTS_PLUGIN_DIR/lib/engines/$e.lock" | cut -d' ' -f1)" ]]
+# install: managed Python 3.12 venv from lib/engines/kokoro_onnx.lock (CPU) or kokoro_onnx_gpu.lock (GPU) · verified model files
+# voices: bundled
+# devices: cpu gpu
+# ratemin: 0.5
+# ratemax: 2.0
+set -uo pipefail
+umask 077
+source "$TTS_PLUGIN_DIR/lib/play.sh"
+
+DEVICE="$(jq -r '.kokoro_onnx.device // "cpu"' "$TTS_CONFIG" 2>/dev/null)"
+[[ "$DEVICE" == gpu ]] || DEVICE=cpu
+ENGINE_NAME=kokoro_onnx
+[[ "$DEVICE" == gpu ]] && ENGINE_NAME=kokoro_onnx_gpu
+ENGINE_DIR="${TTS_DATA_DIR:-$HOME/.local/share/omarchy-tts-local}/engines/$ENGINE_NAME"
+KPY="$ENGINE_DIR/bin/python"
+if [[ ! -x "$KPY" ]]; then
+  echo "speak: kokoro_onnx ($DEVICE) not installed." >&2
+  echo "  Install it from the Provider tab." >&2
+  notify-send -a "Speak" "Kokoro ONNX not installed" "Install it from the Provider tab." 2>/dev/null
+  exit 127
+fi
+
+# An environment this release did not build from its shipped lock is not
+# an installed engine, whatever it contains.
+if [[ "$(cat "$ENGINE_DIR/.lock-sha256" 2>/dev/null)" != "$(sha256sum "$TTS_PLUGIN_DIR/lib/engines/$ENGINE_NAME.lock" | cut -d' ' -f1)" ]]; then
+  echo "speak: kokoro_onnx was installed by an earlier release; reinstall it from the Provider tab." >&2
+  notify-send -a "Speak" "Kokoro ONNX needs reinstalling" "Reinstall it from the Provider tab." 2>/dev/null
+  exit 127
+fi
+
+VOICE="${TTS_VOICE:-}"
+[[ -z "$VOICE" ]] && VOICE="$(jq -r '.kokoro_onnx.voice // "af_heart"' "$TTS_CONFIG" 2>/dev/null)"
+[[ -z "$VOICE" || "$VOICE" == "null" ]] && VOICE="af_heart"
+[[ "$VOICE" =~ ^[a-z]{2}_[a-z]+$ ]] || { echo "speak: kokoro_onnx: invalid voice name" >&2; exit 65; }
+# British voices need British phonemes; every other bundled voice used here
+# is American English.
+LANG_CODE=en-us
+[[ "$VOICE" == b* ]] && LANG_CODE=en-gb
+
+# The model and voice pack are the files the installer verified against
+# lib/engines/models.json. Hashing 350 MB on every utterance would cost more
+# than synthesis, so a full check is recorded against the file's identity
+# (inode, size, mtime) and repeated whenever that identity changes.
+MODELS="$ENGINE_DIR/models"
+MANIFEST="$TTS_PLUGIN_DIR/lib/engines/models.json"
+verify_model() { # <file name>
+  local want size stamp_file identity got
+  want="$(jq -r --arg f "$1" '.kokoro_onnx.files[$f].sha256 // empty' "$MANIFEST" 2>/dev/null)"
+  size="$(jq -r --arg f "$1" '.kokoro_onnx.files[$f].size // empty' "$MANIFEST" 2>/dev/null)"
+  [[ "$want" =~ ^[0-9a-f]{64}$ ]] || { echo "speak: kokoro_onnx: $1 is not a verified model file" >&2; exit 65; }
+  [[ -f "$MODELS/$1" && ! -L "$MODELS/$1" ]] || { echo "speak: kokoro_onnx: $1 is missing; reinstall it from the Provider tab" >&2; exit 127; }
+  identity="$(stat -c '%i:%s:%Y' "$MODELS/$1")"
+  [[ "${identity#*:}" == "$size":* ]] || { echo "speak: kokoro_onnx: $1 failed verification; reinstall it from the Provider tab" >&2; exit 65; }
+  stamp_file="$MODELS/.$1.verified"
+  [[ ! -L "$stamp_file" && "$(cat "$stamp_file" 2>/dev/null)" == "$want $identity" ]] && return 0
+  got="$(sha256sum "$MODELS/$1" | cut -d' ' -f1)"
+  [[ "$got" == "$want" ]] || { echo "speak: kokoro_onnx: $1 failed verification; reinstall it from the Provider tab" >&2; exit 65; }
+  printf '%s %s\n' "$want" "$identity" > "$stamp_file" 2>/dev/null || true
+}
+verify_model kokoro-v1.0.onnx
+verify_model voices-v1.0.bin
+
+RATE="${TTS_RATE:-1.0}"
+ENGINE_PY="$TTS_PLUGIN_DIR/lib/kokoro_onnx_engine.py"
+ARGS=(--models "$MODELS" --device "$DEVICE" --voice "$VOICE" --speed "$RATE" --lang "$LANG_CODE")
+TEXT="$(cat)"
+
+# Keeping the model loaded between utterances removes about half a second of
+# loading from every press. The server lives in its own session, so Stop
+# (which kills this process group) ends the utterance but not the server,
+# and it exits by itself after .kokoro_onnx.keepWarm idle minutes.
+KEEP_WARM="$(jq -r '.kokoro_onnx.keepWarm // 10' "$TTS_CONFIG" 2>/dev/null)"
+[[ "$KEEP_WARM" =~ ^[0-9]+$ ]] || KEEP_WARM=10
+if [[ "$KEEP_WARM" -gt 0 ]]; then
+  RUN_DIR="${XDG_RUNTIME_DIR:-/tmp}/omarchy-tts-local"
+  mkdir -p "$RUN_DIR" && chmod 700 "$RUN_DIR"
+  SOCKET="$RUN_DIR/$ENGINE_NAME.sock"
+  ask_server() {
+    # espeak-ng and onnxruntime are chatty on stderr; none of it is actionable.
+    printf '%s' "$TEXT" | "$KPY" "$ENGINE_PY" ask --socket "$SOCKET" "${ARGS[@]}" 3<&0 2>/dev/null |
+      play_raw 24000 1
+    local status=("${PIPESTATUS[@]}")
+    [[ "${status[1]}" -eq 0 ]] && return "${status[2]}"
+    return "${status[1]}"
+  }
+  if [[ -S "$SOCKET" ]]; then
+    ask_server; rc=$?
+    [[ "$rc" -ne 75 ]] && exit "$rc"
+  fi
+  # Start one server even when several utterances race to do so.
+  exec {start_fd}>>"$RUN_DIR/$ENGINE_NAME.start.lock"
+  if flock -w 15 "$start_fd"; then
+    previous="$(stat -c %i "$SOCKET" 2>/dev/null || true)"
+    setsid -f "$KPY" "$ENGINE_PY" serve --socket "$SOCKET" --idle "$((KEEP_WARM * 60))" \
+      --models "$MODELS" --device "$DEVICE" </dev/null >/dev/null 2>&1
+    for _ in $(seq 1 150); do
+      [[ -S "$SOCKET" && "$(stat -c %i "$SOCKET" 2>/dev/null)" != "$previous" ]] && break
+      sleep 0.05
+    done
+    flock -u "$start_fd"
+  fi
+  exec {start_fd}>&-
+  if [[ -S "$SOCKET" ]]; then
+    ask_server; rc=$?
+    [[ "$rc" -ne 75 ]] && exit "$rc"
+  fi
+fi
+
+# No warm engine: load the model for this utterance only.
+printf '%s' "$TEXT" | "$KPY" "$ENGINE_PY" once "${ARGS[@]}" 3<&0 2>/dev/null | play_raw 24000 1

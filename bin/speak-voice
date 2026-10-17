@@ -3,14 +3,14 @@
 set -uo pipefail
 umask 077
 
-VOICES_DIR="${PIPER_VOICES_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/omarchy-tts/voices/piper}"
-CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy-tts/config.json"
-CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/omarchy-tts"
-STATE_DIR="${XDG_RUNTIME_DIR:+$XDG_RUNTIME_DIR/omarchy-tts}"
+VOICES_DIR="${PIPER_VOICES_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/omarchy-tts-local/voices/piper}"
+CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy-tts-local/config.json"
+CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/omarchy-tts-local"
+STATE_DIR="${XDG_RUNTIME_DIR:+$XDG_RUNTIME_DIR/omarchy-tts-local}"
 # Without a session runtime dir, fall back to an owner-only XDG state
 # directory rather than sticky /tmp, so runtime PID state is never in a
 # location another user can pre-populate.
-STATE_DIR="${STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/omarchy-tts/run}"
+STATE_DIR="${STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/omarchy-tts-local/run}"
 DL_STATE="$STATE_DIR/download.json"
 DL_LOCK="$STATE_DIR/download.lock"
 FILES_LOCK="$STATE_DIR/voice-files.lock"
@@ -52,6 +52,14 @@ case "${1:-}" in
   -h|--help|help) usage; exit 0 ;;
   "") usage >&2; exit 1 ;;
 esac
+
+PLUGIN_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
+CATALOGUE="$PLUGIN_DIR/lib/piper-voices.json"
+DIGESTS="$PLUGIN_DIR/lib/piper-voices.sha256"
+# Resolved from the installed plugin directory.
+# shellcheck disable=SC1091
+source "$PLUGIN_DIR/lib/config.sh"
+tts_migrate_legacy_dirs
 
 case "$1" in
   status|cancel|browse) ;;
@@ -100,12 +108,6 @@ case "$1" in
     migrate_legacy_voices || { printf 'speak-voice: could not migrate legacy voices safely\n' >&2; exit 1; } ;;
 esac
 
-PLUGIN_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
-CATALOGUE="$PLUGIN_DIR/lib/piper-voices.json"
-DIGESTS="$PLUGIN_DIR/lib/piper-voices.sha256"
-# Resolved from the installed plugin directory.
-# shellcheck disable=SC1091
-source "$PLUGIN_DIR/lib/config.sh"
 case "$1" in
   list|remove|use)
     tts_config_init || { printf 'speak-voice: could not initialize %s\n' "$CONFIG" >&2; exit 1; } ;;

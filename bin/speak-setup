@@ -31,17 +31,16 @@ DATA_HOME = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share"))
 CACHE_HOME = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"))
 # Without a session runtime dir, fall back to an owner-only XDG state
 # directory rather than sticky /tmp.
-RUNTIME = (Path(os.environ["XDG_RUNTIME_DIR"]) / "omarchy-tts"
+RUNTIME = (Path(os.environ["XDG_RUNTIME_DIR"]) / "omarchy-tts-local"
            if os.environ.get("XDG_RUNTIME_DIR")
            else Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state"))
-           / "omarchy-tts" / "run")
-DATA = DATA_HOME / "omarchy-tts"
+           / "omarchy-tts-local" / "run")
+DATA = DATA_HOME / "omarchy-tts-local"
 ENGINE = DATA / "engines"
 VOICES = DATA / "voices" / "piper"
 STATE = RUNTIME / "setup.json"
 SETUP_LOCK = RUNTIME / "setup.lock"
-HEALTH = CACHE_HOME / "omarchy-tts" / "health.json"
-VOICE_CACHE = CACHE_HOME / "omarchy-tts" / "voices"
+HEALTH = CACHE_HOME / "omarchy-tts-local" / "health.json"
 VOICE_TOOL = PLUGIN / "bin" / "speak-voice"
 BINDINGS_TOOL = PLUGIN / "bin" / "speak-bindings"
 DEFAULT_VOICE = "en_US-amy-medium"
@@ -56,7 +55,8 @@ ENGINE_SPECS = PLUGIN / "lib" / "engines"
 # build backend uv resolves unhashed from the index. Such packages are
 # instead shipped as reviewed wheels under lib/engines/wheels, built
 # reproducibly from the hash-verified sdist (see DEVELOPMENT.md).
-ENGINE_LOCKS = {name: ENGINE_SPECS / f"{name}.lock" for name in ("piper", "kokoro", "easyocr")}
+ENGINE_LOCKS = {name: ENGINE_SPECS / f"{name}.lock"
+                for name in ("piper", "kokoro", "kokoro_onnx", "kokoro_onnx_gpu", "easyocr")}
 MODEL_MANIFEST = ENGINE_SPECS / "models.json"
 LOCK_STAMP = ".lock-sha256"
 ENGINE_PYTHON = "3.12"
@@ -480,6 +480,34 @@ def install_kokoro_models(models: Path) -> None:
                        dest, entry["sha256"], entry["size"])
 
 
+def install_kokoro_onnx_models(models: Path) -> None:
+    """Fetch the Kokoro ONNX model and voice pack, each verified against its
+    shipped digest. The CPU and GPU engines load identical files, so a copy
+    the other engine already verified is hard-linked instead of downloaded
+    again, and checked against the same digest before it is kept."""
+    files = model_manifest().get("kokoro_onnx", {}).get("files", {})
+    if not files:
+        raise RuntimeError("The model manifest has no usable Kokoro ONNX entry")
+    models.mkdir(parents=True, exist_ok=True)
+    for name, entry in files.items():
+        if not re.fullmatch(r"[A-Za-z0-9._-]+\.(onnx|bin)", name):
+            raise RuntimeError(f"Refusing model file with an unexpected name: {name}")
+        dest = models / name
+        for sibling in ("kokoro_onnx", "kokoro_onnx_gpu"):
+            existing = ENGINE / sibling / "models" / name
+            if existing.is_symlink() or not existing.is_file():
+                continue
+            try:
+                os.link(existing, dest)
+            except OSError:
+                continue
+            if dest.stat().st_size == entry["size"] and sha256_file(dest) == entry["sha256"]:
+                break
+            dest.unlink(missing_ok=True)
+        else:
+            fetch_verified(entry["url"], dest, entry["sha256"], entry["size"])
+
+
 def create_venv(uv: str, target: Path, python_version: str | None = None) -> None:
     """Create a fresh managed environment at a private staging path."""
     if target.exists() or target.is_symlink():
@@ -563,9 +591,25 @@ def install_language(code: str) -> None:
 # the kokoro lock as a hash-pinned wheel URL, so it installs with everything
 # else and spaCy never reaches for its own downloader.
 OCR_ENGINES = {"easyocr"}
-# Every cloud key the plugin will store. Google and OpenAI credentials are
-# shared by their speech and OCR adapters.
-CLOUD_KEYS = ("openai", "elevenlabs", "google", "gemini")
+# API keys earlier versions stored for their cloud services. Cleanup still
+# clears them, so a key saved before the cloud providers were removed is not
+# left behind in the keyring.
+LEGACY_KEYRING_SERVICE = "omarchy-tts"
+LEGACY_CLOUD_KEYS = ("openai", "elevenlabs", "google", "gemini")
+
+
+def migrate_legacy_dirs() -> None:
+    """Move the pre-rename omarchy-tts config, data and cache directories to
+    their new names, keeping installed engines and voices. A destination that
+    already exists is never merged into or replaced (bin/speak and
+    speak-voice do the same through lib/config.sh)."""
+    for base in (CONFIG_HOME, DATA_HOME, CACHE_HOME):
+        old, new = base / "omarchy-tts", base / "omarchy-tts-local"
+        if (old.exists() or old.is_symlink()) and not (new.exists() or new.is_symlink()):
+            try:
+                old.rename(new)
+            except OSError:
+                pass  # another tool moved it first, or it cannot be moved
 
 
 def build_kokoro(target: Path) -> None:
@@ -580,6 +624,30 @@ def build_kokoro(target: Path) -> None:
     write_state("running", "engine", 60, "Downloading and verifying the Kokoro model and voices")
     install_kokoro_models(target / "models")
 
+
+
+def build_kokoro_onnx(target: Path, *, gpu: bool = False) -> None:
+    engine = "kokoro_onnx_gpu" if gpu else "kokoro_onnx"
+    uv = ensure_uv()
+    write_state("running", "engine", 20,
+                "Installing Kokoro ONNX with GPU support (about 2.3 GB)" if gpu
+                else "Installing the Kokoro ONNX speech engine")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    create_venv(uv, target, ENGINE_PYTHON)
+    sync_locked(uv, str(target / "bin/python"), engine)
+    write_state("running", "engine", 70, "Downloading and verifying the Kokoro ONNX model and voices")
+    install_kokoro_onnx_models(target / "models")
+
+
+def kokoro_onnx_engine() -> str:
+    """The configured device decides which Kokoro ONNX engine an install
+    builds: the small CPU runtime, or the CUDA runtime with its libraries."""
+    try:
+        config = json.loads((CONFIG_HOME / "omarchy-tts-local" / "config.json").read_text())
+        device = config.get("kokoro_onnx", {}).get("device")
+    except (OSError, ValueError, AttributeError):
+        device = None
+    return "kokoro_onnx_gpu" if device == "gpu" else "kokoro_onnx"
 
 
 def build_easyocr(target: Path) -> None:
@@ -604,7 +672,7 @@ def prove(target: str) -> None:
     """
     if target.startswith(LANGUAGE_PREFIX):
         return          # a language pack has no speech of its own to prove
-    provider = {"recommended": "piper"}.get(target, target)
+    provider = {"recommended": "piper", "kokoro_onnx_gpu": "kokoro_onnx"}.get(target, target)
     speak = Path(__file__).resolve().parent / "speak"
     if not speak.exists():
         return
@@ -785,6 +853,14 @@ def worker(target: str) -> int:
                                            after_activate=install_voice)
             elif target == "kokoro":
                 install_engine_transaction("kokoro", build_kokoro)
+            elif target in ("kokoro_onnx", "kokoro_onnx_cpu", "kokoro_onnx_gpu"):
+                # The panel names the device when it asks; a bare target
+                # follows the configured one.
+                engine = {"kokoro_onnx_cpu": "kokoro_onnx",
+                          "kokoro_onnx_gpu": "kokoro_onnx_gpu"}.get(target) or kokoro_onnx_engine()
+                install_engine_transaction(
+                    engine, lambda staging: build_kokoro_onnx(
+                        staging, gpu=engine == "kokoro_onnx_gpu"))
             elif target == "easyocr":
                 install_engine_transaction("easyocr", build_easyocr)
             elif target.startswith(LANGUAGE_PREFIX):
@@ -816,7 +892,8 @@ def start(target: str) -> None:
         except RuntimeError as exc:
             emit(ok=False, code="unknown_target", message=str(exc))
             return
-    elif target not in {"recommended", "piper", "kokoro", *OCR_ENGINES}:
+    elif target not in {"recommended", "piper", "kokoro", "kokoro_onnx",
+                        "kokoro_onnx_cpu", "kokoro_onnx_gpu", *OCR_ENGINES}:
         emit(ok=False, code="unknown_target", message="Unknown installation target")
         return
     try:
@@ -959,11 +1036,8 @@ def job_status() -> None:
     emit(**current)
 
 
-def invalidate_health(provider: str) -> bool:
-    """Atomically forget proof affected by a credential mutation."""
-    keys = {provider}
-    if provider in {"openai", "google"}:
-        keys.add(f"ocr:{provider}")
+def invalidate_health(key: str) -> bool:
+    """Atomically forget the recorded proof for one provider or engine."""
     if not HEALTH.exists():
         return True
     lock_fd: int | None = None
@@ -979,8 +1053,7 @@ def invalidate_health(provider: str) -> bool:
             return True  # malformed cache entries are already treated as untested
         if not isinstance(value, dict):
             return True
-        for key in keys:
-            value.pop(key, None)
+        value.pop(key, None)
         descriptor, name = tempfile.mkstemp(prefix=f".{HEALTH.name}.", dir=HEALTH.parent)
         temporary = Path(name)
         with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
@@ -1002,40 +1075,11 @@ def invalidate_health(provider: str) -> bool:
             os.close(lock_fd)
 
 
-def reset_account_state(provider: str) -> bool:
-    """Forget account-derived voices after a credential boundary changes."""
-    ok = True
-    try:
-        (VOICE_CACHE / f"{provider}.json").unlink(missing_ok=True)
-    except OSError:
-        ok = False
-    voice_path = {"elevenlabs": ".elevenlabs.voiceId",
-                  "google": ".google.voice"}.get(provider)
-    if voice_path:
-        speak = PLUGIN / "bin" / "speak"
-        try:
-            result = subprocess.run(
-                [str(speak), "--set-stdin-json", voice_path], input='""\n',
-                text=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                timeout=HELPER_TIMEOUT,
-            )
-            ok = result.returncode == 0 and ok
-        except (OSError, subprocess.TimeoutExpired):
-            ok = False
-    return ok
-
-
-def invalidate_credential_state(provider: str) -> bool:
-    health_ok = invalidate_health(provider)
-    account_ok = reset_account_state(provider)
-    return health_ok and account_ok
-
-
 def keyring_contains(tool: str, provider: str) -> bool:
     """Return key presence while distinguishing absence from keyring failure."""
     try:
         result = subprocess.run(
-            [tool, "lookup", "service", "omarchy-tts", "key", provider],
+            [tool, "lookup", "service", LEGACY_KEYRING_SERVICE, "key", provider],
             stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True,
             timeout=HELPER_TIMEOUT,
         )
@@ -1048,77 +1092,6 @@ def keyring_contains(tool: str, provider: str) -> bool:
     if result.returncode == 1 and not result.stderr.strip():
         return False
     raise RuntimeError("The system keyring did not respond")
-
-
-def key_store(provider: str) -> None:
-    if provider not in CLOUD_KEYS:
-        emit(ok=False, code="unknown_provider", message="Unknown cloud provider")
-        return
-    raw_key = sys.stdin.readline(4098)
-    key = raw_key.rstrip("\r\n")
-    if (len(key) < 8 or len(key) > 4096
-            or any(not 33 <= ord(character) <= 126 for character in key)):
-        emit(ok=False, code="invalid_key", message="Enter a valid API key without surrounding whitespace")
-        return
-    tool = shutil.which("secret-tool")
-    if not tool:
-        emit(ok=False, code="no_keyring", message="The system keyring is unavailable")
-        return
-    try:
-        result = subprocess.run(
-            [tool, "store", f"--label=omarchy-tts {provider}",
-             "service", "omarchy-tts", "key", provider],
-            input=key, text=True, stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL, timeout=HELPER_TIMEOUT,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        key = ""
-        emit(ok=False, code="keyring_failed",
-             message="The system keyring did not respond")
-        return
-    key = ""
-    if result.returncode:
-        emit(ok=False, code="keyring_failed", message="Could not save the API key")
-    else:
-        invalidated = invalidate_credential_state(provider)
-        emit(ok=True, warning="" if invalidated else "Saved, but cached health could not be cleared")
-
-
-def key_remove(provider: str) -> None:
-    if provider not in CLOUD_KEYS:
-        emit(ok=False, code="unknown_provider", message="Unknown cloud provider")
-        return
-    tool = shutil.which("secret-tool")
-    if not tool:
-        emit(ok=False, code="no_keyring", message="The system keyring is unavailable")
-        return
-    try:
-        present = keyring_contains(tool, provider)
-    except RuntimeError as exc:
-        emit(ok=False, code="keyring_failed", message=str(exc))
-        return
-    if not present:
-        invalidated = invalidate_credential_state(provider)
-        emit(ok=True, code="not_found", message="No stored key was found",
-             warning="" if invalidated else "Cached health could not be cleared")
-        return
-    try:
-        result = subprocess.run(
-            [tool, "clear", "service", "omarchy-tts", "key", provider],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            timeout=HELPER_TIMEOUT,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        emit(ok=False, code="keyring_failed",
-             message="The system keyring did not respond")
-        return
-    if result.returncode:
-        emit(ok=False, code="keyring_failed",
-             message="Could not remove the stored API key")
-        return
-    invalidated = invalidate_credential_state(provider)
-    emit(ok=True, message="API key removed",
-         warning="" if invalidated else "Cached health could not be cleared")
 
 
 def cleanup() -> int:
@@ -1139,7 +1112,7 @@ def cleanup() -> int:
             failures.append("Could not remove managed shortcuts")
     tool = shutil.which("secret-tool")
     if tool:
-        for provider in CLOUD_KEYS:
+        for provider in LEGACY_CLOUD_KEYS:
             try:
                 present = keyring_contains(tool, provider)
             except RuntimeError:
@@ -1148,7 +1121,7 @@ def cleanup() -> int:
             if present:
                 try:
                     cleared = subprocess.run(
-                        [tool, "clear", "service", "omarchy-tts", "key", provider],
+                        [tool, "clear", "service", LEGACY_KEYRING_SERVICE, "key", provider],
                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                         timeout=HELPER_TIMEOUT,
                     )
@@ -1159,15 +1132,78 @@ def cleanup() -> int:
                         failures.append(f"Could not remove the {provider} API key")
                     else:
                         removed_keys.append(provider)
-            if not invalidate_credential_state(provider):
-                failures.append(f"Could not clear cached {provider} state")
         if removed_keys:
             removed.append("stored API keys (" + ", ".join(removed_keys) + ")")
-    else:
-        failures.append("The system keyring is unavailable")
     ok = not failures
     emit(ok=ok, removed=removed, failures=failures)
     return 0 if ok else 1
+
+
+# What each uninstall target removes, and the provider whose proof it voids.
+# Kokoro ONNX is per device; the CPU and GPU engines hard-link the same model
+# files, so removing one leaves the other's copy intact.
+UNINSTALL_TARGETS = {
+    "piper": (("piper",), "piper", True),
+    "kokoro": (("kokoro",), "kokoro", False),
+    "kokoro_onnx_cpu": (("kokoro_onnx",), "kokoro_onnx", False),
+    "kokoro_onnx_gpu": (("kokoro_onnx_gpu",), "kokoro_onnx", False),
+    "easyocr": (("easyocr",), "ocr:easyocr", False),
+}
+
+
+def stop_warm_engines(engine: str) -> None:
+    """End a kept-loaded Kokoro ONNX server running from this engine."""
+    python = str(ENGINE / engine / "bin" / "python")
+    for entry in Path("/proc").iterdir():
+        if not entry.name.isdigit():
+            continue
+        try:
+            if entry.stat().st_uid != os.getuid():
+                continue
+            argv = (entry / "cmdline").read_bytes().split(b"\0")
+        except OSError:
+            continue
+        if argv and argv[0].decode(errors="replace") == python and b"serve" in argv:
+            try:
+                os.kill(int(entry.name), signal.SIGTERM)
+            except OSError:
+                pass
+    (RUNTIME / f"{engine}.sock").unlink(missing_ok=True)
+
+
+def uninstall(target: str) -> int:
+    if target not in UNINSTALL_TARGETS:
+        emit(ok=False, code="unknown_target", message="Unknown uninstall target")
+        return 1
+    engines, health_key, with_voices = UNINSTALL_TARGETS[target]
+    try:
+        lock_fd = open_private_lock(SETUP_LOCK)
+    except (OSError, RuntimeError):
+        emit(ok=False, code="lock_error", message="Setup lock is unavailable")
+        return 1
+    try:
+        try:
+            fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            emit(ok=False, code="busy", message="An install is running; try again when it finishes.")
+            return 1
+        removed: list[str] = []
+        for engine in engines:
+            stop_warm_engines(engine)
+            leftovers = [ENGINE / engine, *ENGINE.glob(f"{engine}.previous.*"),
+                         *ENGINE.glob(f".{engine}.staging.*"), ENGINE / f".{engine}.transaction.json"]
+            for path in leftovers:
+                if path.exists() or path.is_symlink():
+                    remove_path(path)
+                    removed.append(path.name)
+        if with_voices and VOICES.exists():
+            remove_path(VOICES)
+            removed.append("voices")
+        invalidate_health(health_key)
+        emit(ok=True, removed=removed)
+        return 0
+    finally:
+        os.close(lock_fd)
 
 
 def diagnostics() -> None:
@@ -1175,7 +1211,7 @@ def diagnostics() -> None:
     details.update({
         "version": json.loads((PLUGIN / "manifest.json").read_text()).get("version"),
         "commands": {name: bool(shutil.which(name)) for name in
-                     ("wl-paste", "grim", "slurp", "tesseract", "secret-tool", "pw-cat")},
+                     ("wl-paste", "grim", "slurp", "tesseract", "pw-cat")},
         "provider": "configured",  # deliberately excludes selected/spoken text
     })
     emit(**details)
@@ -1191,14 +1227,13 @@ def main() -> int:
     worker_parser.add_argument("target")
     sub.add_parser("job")
     sub.add_parser("cancel")
-    key_parser = sub.add_parser("key-store")
-    key_parser.add_argument("provider")
-    remove_key_parser = sub.add_parser("key-remove")
-    remove_key_parser.add_argument("provider")
     cleanup_parser = sub.add_parser("cleanup")
     cleanup_parser.add_argument("--yes", action="store_true")
     sub.add_parser("diagnostics")
+    uninstall_parser = sub.add_parser("uninstall")
+    uninstall_parser.add_argument("target")
     args = parser.parse_args()
+    migrate_legacy_dirs()
     try:
         ensure_private_runtime()
     except (OSError, RuntimeError) as exc:
@@ -1210,15 +1245,14 @@ def main() -> int:
     elif args.command == "_worker": return worker(args.target)
     elif args.command == "job": job_status()
     elif args.command == "cancel": cancel()
-    elif args.command == "key-store": key_store(args.provider)
-    elif args.command == "key-remove": key_remove(args.provider)
     elif args.command == "cleanup":
         if not args.yes:
             emit(ok=False, code="confirmation_required",
-                 message="cleanup removes managed shortcuts and stored API keys; rerun with --yes")
+                 message="cleanup removes managed shortcuts and any API keys older versions stored; rerun with --yes")
             return 2
         return cleanup()
     elif args.command == "diagnostics": diagnostics()
+    elif args.command == "uninstall": return uninstall(args.target)
     return 0
 
 

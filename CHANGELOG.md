@@ -3,7 +3,65 @@
 All notable changes are documented here. This project follows Semantic
 Versioning.
 
-## Unreleased
+## 2.0.0 - 2026-10-16
+
+- **Breaking:** renamed to Omarchy TTS Local (`io.github.jagrat7.omarchy-tts-local`).
+  Config, data, cache and runtime paths move from `omarchy-tts` to
+  `omarchy-tts-local`; the first run of any tool moves the old config, data
+  and cache directories over, so installed engines and voices are kept. A
+  shortcut block written under the old name is still recognised, flagged in
+  the Keys tab, and rewritten with the new plugin path on Apply changes.
+- **Breaking:** remove every cloud service. The OpenAI, ElevenLabs, Gemini and
+  Google Cloud speech providers and the OpenAI and Google Cloud Vision OCR
+  engines are gone, along with API-key storage, usage telemetry, account voice
+  refresh (`--refresh-voices`, `--usage`, `speak-setup key-store` /
+  `key-remove`) and the Local/Cloud groups in the Provider and Screen tabs.
+  Speech and screen reading now always run on this computer.
+- Config schema 5: a configuration that selected a removed provider or OCR
+  engine moves to Piper or Tesseract, and the removed services' settings and
+  `.ui.collapsed` are dropped.
+- `speak-setup cleanup --yes` still clears API keys earlier versions stored in
+  the keyring.
+- Provider tab: Kokoro PyTorch and Kokoro ONNX share one Kokoro row. A slider
+  switches between installed variants and appears only once there are two; +
+  lists the variants not installed, with sizes, and installs one inline with
+  progress and Cancel. A variant that installs and passes its test is offered
+  with Switch / Later. The device line, + and uninstall show on the row in
+  use. Providers group by new `# family:`, `# variant:` and `# variantnote:`
+  headers, reported by `speak --info`.
+
+## 1.4.0 - 2026-09-30
+
+- Add the `kokoro_onnx` provider: Kokoro v1.0 on ONNX Runtime with all 27
+  English voices, streaming sentence by sentence. It starts in under a second
+  where the PyTorch provider spends several seconds importing on every
+  utterance, and needs about 480 MB instead of about 6 GB.
+- Add a per-provider device setting (`.kokoro.device`, `.kokoro_onnx.device`:
+  `cpu` or `gpu`) with a Run on CPU / GPU switch in the Provider tab. The
+  PyTorch provider moves its model to CUDA when available. `kokoro_onnx`
+  installs a separate, hash-locked CUDA engine (`kokoro_onnx_gpu.lock`) that
+  shares the verified model files with the CPU engine through hard links.
+- `kokoro_onnx` keeps its model loaded in a private background process for
+  `.kokoro_onnx.keepWarm` idle minutes (default 10, `0` disables), and splits
+  text into sentences with a short first clause. Warm, the GPU engine starts
+  speaking in about 0.2 s and the CPU engine in about 0.5–0.8 s.
+- Model files are digest-checked once per file identity (inode, size, mtime)
+  instead of on every utterance.
+- Provider tab: local and cloud providers in collapsible groups (remembered
+  in `.ui.collapsed`; a collapsed group still shows the provider in use).
+  Switching a device whose engine is not installed, and installing Kokoro
+  PyTorch, now ask first and state the download size; switching to an
+  installed device retests it automatically.
+- Uninstall for every engine the plugin installs (Piper with its voices,
+  Kokoro PyTorch, each Kokoro ONNX device engine, EasyOCR), from the panel or
+  `speak-setup uninstall <target>`. A kept-loaded Kokoro ONNX engine is
+  stopped first; removing one device engine keeps the other's model files.
+- Install confirmations for speech and OCR engines share one component; each
+  engine declares its download with `# installsize:` / `# installnote:`
+  headers (per device with `-cpu` / `-gpu`).
+- Fix every managed shortcut being reported as a conflict on Lua-configured
+  Hyprland, where `hyprctl binds` shows `__lua` and an opaque callback id
+  instead of the command; the managed block is now recognised by its label.
 
 ## 1.3.2 - 2026-09-06
 

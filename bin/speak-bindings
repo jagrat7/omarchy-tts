@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Manage the small, explicitly-owned omarchy-tts block in bindings.lua.
+"""Manage the small, explicitly-owned omarchy-tts-local block in bindings.lua.
 
 The tool never edits bindings outside its markers.  It backs up before every
 write and rolls back when Hyprland rejects the result.
@@ -23,9 +23,14 @@ import time
 
 os.umask(0o077)
 
-BEGIN = "-- >>> omarchy-tts bindings"
-END = "-- <<< omarchy-tts bindings"
-PLUGIN_ID = "io.github.hikari112.tts"
+BEGIN = "-- >>> omarchy-tts-local bindings"
+END = "-- <<< omarchy-tts-local bindings"
+# The block versions before the rename wrote. It is still ours: it counts as
+# installed and is removed or replaced like the current one, so applying the
+# shortcuts once moves them to the new marker and plugin path.
+LEGACY_BEGIN = "-- >>> omarchy-tts bindings"
+LEGACY_END = "-- <<< omarchy-tts bindings"
+PLUGIN_ID = "io.github.jagrat7.omarchy-tts-local"
 BINDINGS_CONFIG_MAX_BYTES = 1_048_576
 BINDINGS_SOURCE_MAX_BYTES = 8_388_608
 
@@ -95,9 +100,25 @@ DEFAULTS = {
 }
 
 
+def migrate_legacy_dirs() -> None:
+    """Move the pre-rename omarchy-tts config, data and cache directories to
+    their new names, keeping installed engines and voices. A destination that
+    already exists is never merged into or replaced (bin/speak-setup does
+    the same, and bin/speak and speak-voice through lib/config.sh)."""
+    for base in (config_home(),
+                 Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share")),
+                 Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"))):
+        old, new = base / "omarchy-tts", base / "omarchy-tts-local"
+        if (old.exists() or old.is_symlink()) and not (new.exists() or new.is_symlink()):
+            try:
+                old.rename(new)
+            except OSError:
+                pass  # another tool moved it first, or it cannot be moved
+
+
 def paths() -> tuple[Path, Path]:
     home = config_home()
-    return home / "hypr" / "bindings.lua", home / "omarchy-tts" / "bindings.json"
+    return home / "hypr" / "bindings.lua", home / "omarchy-tts-local" / "bindings.json"
 
 
 def load_config(path: Path) -> dict:
@@ -166,16 +187,25 @@ def normalize_chord(chord: str) -> str:
     return normalized
 
 
-def replace_block(text: str, block: str | None) -> str:
-    if text.count(BEGIN) > 1 or text.count(END) > 1:
-        raise ValueError("bindings.lua has duplicate omarchy-tts marker blocks")
-    start, end = text.find(BEGIN), text.find(END)
+def strip_block(text: str, begin: str, end_marker: str) -> str:
+    if text.count(begin) > 1 or text.count(end_marker) > 1:
+        raise ValueError("bindings.lua has duplicate TTS marker blocks")
+    start, end = text.find(begin), text.find(end_marker)
     if (start >= 0) != (end >= 0) or (start >= 0 and end < start):
-        raise ValueError("bindings.lua has incomplete omarchy-tts markers")
+        raise ValueError("bindings.lua has incomplete TTS markers")
     if start >= 0:
         end = text.find("\n", end)
         end = len(text) if end < 0 else end + 1
         text = text[:start].rstrip() + "\n" + text[end:].lstrip("\n")
+    return text
+
+
+def has_block(text: str) -> bool:
+    return BEGIN in text or LEGACY_BEGIN in text
+
+
+def replace_block(text: str, block: str | None) -> str:
+    text = strip_block(strip_block(text, LEGACY_BEGIN, LEGACY_END), BEGIN, END)
     if block:
         text = text.rstrip() + "\n\n" + block + "\n"
     return text
@@ -316,6 +346,10 @@ def active_conflicting_chords(config: dict) -> list[str]:
     occupied = set()
     if not isinstance(active, list):
         raise RuntimeError("Hyprland returned an unreadable shortcut list")
+    # A Lua-configured Hyprland reports o.bind() shortcuts with dispatcher
+    # "__lua" and an opaque callback id as the argument, so the command is not
+    # visible. Our own block is then recognised by its label on its own chord.
+    managed_labels = {chord_signature(item["chord"]): item["label"] for item in config.values()}
     for binding in active:
         if not isinstance(binding, dict):
             continue
@@ -326,6 +360,9 @@ def active_conflicting_chords(config: dict) -> list[str]:
         signature = (modmask, str(binding.get("key", "")).upper())
         command = str(binding.get("arg", ""))
         if is_our_command(command):
+            continue
+        if (binding.get("dispatcher") == "__lua"
+                and managed_labels.get(signature) == binding.get("description")):
             continue
         legacy_action = legacy_command_action(command)
         if (legacy_action is not None
@@ -466,7 +503,7 @@ def execute(args: argparse.Namespace, target: Path, config_path: Path) -> int:
     without_block = replace_block(full_text, None)
 
     if args.command == "status":
-        installed = BEGIN in full_text
+        installed = has_block(full_text)
         # Exact shortcuts from older README versions are safe to adopt into
         # our managed block; do not present them as user conflicts.
         conflict_source = without_block if installed else migrate_manual_tts_lines(without_block)
@@ -474,7 +511,10 @@ def execute(args: argparse.Namespace, target: Path, config_path: Path) -> int:
         adoptable = [] if installed else adoptable_bindings(without_block)
         print(json.dumps({"installed": installed, "bindings": config,
                           "conflicts": conflicts, "adoptable": adoptable,
-                          "canInstall": not conflicts}))
+                          "canInstall": not conflicts,
+                          # Written before the rename: still works only while
+                          # the old plugin path does, until applied again.
+                          "legacy": LEGACY_BEGIN in full_text}))
         return 0
     if args.command == "set":
         candidate = copy.deepcopy(config)
@@ -482,7 +522,7 @@ def execute(args: argparse.Namespace, target: Path, config_path: Path) -> int:
         conflicts = all_conflicts(without_block, candidate)
         if conflicts:
             raise ValueError("shortcut already used: " + ", ".join(conflicts))
-        block = render(candidate) if BEGIN in full_text else None
+        block = render(candidate) if has_block(full_text) else None
         config_actual = write_target(config_path)
         config_existed = config_actual.exists()
         previous_config = (read_regular_text(config_actual, BINDINGS_CONFIG_MAX_BYTES)
@@ -501,7 +541,7 @@ def execute(args: argparse.Namespace, target: Path, config_path: Path) -> int:
         print("updated")
         return 0
     original = without_block
-    if args.command == "remove" and BEGIN not in full_text:
+    if args.command == "remove" and not has_block(full_text):
         print("removed")
         return 0
     if args.command == "install":
@@ -525,6 +565,7 @@ def main() -> int:
     set_parser.add_argument("action", choices=DEFAULTS)
     set_parser.add_argument("chord")
     args = parser.parse_args()
+    migrate_legacy_dirs()
     target, config_path = paths()
 
     # An install and a shortcut edit update two files as one logical action.

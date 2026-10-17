@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "id": "io.github.hikari112.tts",
-  "name": "Text to Speech",
-  "version": "1.3.2",
-  "author": "hikari",
+  "id": "io.github.jagrat7.omarchy-tts-local",
+  "name": "Local Text to Speech",
+  "version": "2.0.0",
+  "author": "jagrat7",
   "license": "MIT",
-  "description": "On-demand, local-first speech for selected text and anything visible on screen",
+  "description": "On-demand, local-only speech for selected text and anything visible on screen",
   "kinds": [
     "bar-widget"
   ],
@@ -13,7 +13,7 @@
     "barWidget": "BarWidget.qml"
   },
   "barWidget": {
-    "displayName": "Text to Speech",
+    "displayName": "Local Text to Speech",
     "description": "Read selected text or anything visible on screen",
     "category": "Info",
     "allowMultiple": false,

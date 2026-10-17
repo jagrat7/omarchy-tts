@@ -21,41 +21,39 @@ and testable.
 
 QML uses argv arrays for user-controlled values. Shell interpretation is
 limited to a fixed allowlist handled by the graphical setup backend.
-Cloud keys are entered in a masked panel field and stored with Secret Service;
-the key never returns to QML or appears in a process argument.
+Every provider and OCR engine runs locally; nothing in the plugin holds a
+credential or sends selected text or captures off the machine.
 
 ## Configuration
 
-`config.json` schema version 4 is additive and backwards compatible. Startup
-fills missing defaults without replacing existing values. ElevenLabs has no
-global default voice: the first successful account-voice refresh selects one
-only when the user has not already made a choice. Schema 3 migrates the former
-ElevenLabs default model to `eleven_flash_v2_5`; schema 4 standardizes Gemini
-on the Google AI Developer API. Invalid JSON, oversized files, and unsafe
-nested shapes are preserved with an `.invalid.<timestamp>` suffix before
-type-safe defaults are restored. Writes are limited to an allowlist, serialized,
-and use an atomic rename with mode 0600. Existing config symlinks keep pointing
-to the same target, while dangling symlinks are rejected.
+`config.json` schema version 5 is additive and backwards compatible. Startup
+fills missing defaults without replacing existing values. Schema 5 removes the
+retired cloud providers' settings and moves a configuration that selected one
+of them (or a cloud OCR engine) to Piper or Tesseract. Invalid JSON, oversized
+files, and unsafe nested shapes are preserved with an `.invalid.<timestamp>`
+suffix before type-safe defaults are restored. Writes are limited to an
+allowlist, serialized, and use an atomic rename with mode 0600. Existing config
+symlinks keep pointing to the same target, while dangling symlinks are
+rejected.
 
 Runtime state is stored in a private, user-owned directory. Speech and
 background jobs record both process ownership and identity; callers must only
 clear state they still own, and the UI does not expose cancellation until that
 identity is confirmed. Provider/OCR health entries carry fingerprints of the
-adapter, relevant configuration, and credential source, so old proof becomes
-untested after meaningful changes. QML settings writes are serialized, with
+adapter and its relevant configuration, so old proof becomes untested after
+meaningful changes. QML settings writes are serialized, with
 redundant pending writes to the same property coalesced.
 
 Provider headers are the capability boundary consumed by `speak --info`.
-Alongside descriptive fields, adapters can declare byte/character limits,
-credential names and environment variables, deprecation, account voice
-refresh, and usage refresh. The panel acts on those normalized fields instead
-of inferring behavior from a filename.
+Alongside descriptive fields, adapters can declare byte/character limits, rate
+ranges, devices, install sizes, and deprecation. The panel acts on those
+normalized fields instead of inferring behavior from a filename.
 
 Speech preparation and playback have separate, identity-checked ownership
 records. A new utterance atomically hands off under the speech lock; Stop can
 cancel selection, capture, OCR, provider preparation, or playback without PID
-reuse races. Public text and capture inputs, catalogue records, downloads, and
-cloud responses all have explicit size ceilings.
+reuse races. Public text and capture inputs, catalogue records, and downloads
+all have explicit size ceilings.
 
 Managed engine setup and Piper voice publication are transactions. Engine
 activation records a private recovery journal before replacing a proven
@@ -72,7 +70,9 @@ invocation repairs artifacts left by abrupt process death or power loss.
 - Provider installs use reviewed Omarchy/uv commands and require confirmation.
 - Direct engine packages are release-pinned; Kokoro deliberately uses an
   isolated Python 3.12 because its published metadata excludes newer Python.
-- API keys use the system keyring rather than a plaintext keys file.
+- The cloud providers and OCR engines were removed in 2.0.0, so the plugin
+  keeps no credentials at all. `speak-setup cleanup` still clears keys that
+  earlier versions stored in the keyring.
 - Live speed changes apply to the next utterance because current providers do
   not expose safe in-place playback speed updates.
 
@@ -84,7 +84,7 @@ invocation repairs artifacts left by abrupt process death or power loss.
 4. `bin/speak-setup` transaction and recovery behavior
 5. `bin/speak-voice` catalogue, verification, publication, and recovery
 6. `bin/speak-bindings` safety and coupled rollback behavior
-7. provider/OCR request construction, bounds, and error normalization
+7. provider/OCR engine invocation and input bounds
 
 Run `python3 -m unittest discover -s tests -v` and the ShellCheck command from
 the README. The suite includes static QML interaction contracts; a full visual

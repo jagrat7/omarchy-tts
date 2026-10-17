@@ -21,19 +21,12 @@ Item {
   property var setup: ({ ready: false, engineReady: false, voiceReady: false })
   property bool setupLoaded: false
   property var setupJob: ({ status: "idle", step: "", progress: 0, message: "" })
-  property var keyResult: ({ ok: false, message: "" })
   property string preview: ""
   property string error: ""
   property string verifying: ""
-  property string refreshingUsage: ""
-  property string refreshingVoices: ""
   property bool downloadStarting: false
   property string pendingDownloadVoice: ""
   property bool setupStarting: false
-  property string pendingKey: ""
-  property string pendingKeyProvider: ""
-  property string pendingKeyPurpose: "speech"
-  property bool keySaving: false
   property string pendingSpeech: ""
   property string pendingPreview: ""
   property string pendingConfigValue: ""
@@ -134,7 +127,19 @@ Item {
   }
   function speak(text) { error = ""; pendingSpeech = String(text).slice(0, 4096); speechProc.command = [speakBin, "--stdin-json"]; restart(speechProc) }
   function stop() { error = ""; speechProc.command = [speakBin, "--stop"]; restart(speechProc) }
-  function selectProvider(name) { setConfig(".provider", name) }
+  // Choosing something not yet proven proves it, once the choice has landed.
+  function selectProvider(name, verify) { if (verify) afterConfigVerify = name; setConfig(".provider", name) }
+  // Only providers that declare `# devices:` offer this; the config layer
+  // accepts cpu or gpu for exactly those paths. `then` runs once the write
+  // has landed, so a test or install never reads the previous device.
+  property string afterConfigVerify: ""
+  property string afterConfigSetup: ""
+  function setDevice(provider, device, then) {
+    if (["kokoro", "kokoro_onnx"].indexOf(provider) < 0 || ["cpu", "gpu"].indexOf(device) < 0) return
+    if (then === "verify") afterConfigVerify = provider
+    else if (then === "install") afterConfigSetup = provider === "kokoro_onnx" ? "kokoro_onnx_" + device : provider
+    setConfig("." + provider + ".device", device)
+  }
   // Proving a backend takes seconds and makes no sound; `verifying` lets the
   // panel say so rather than appearing to have ignored the click.
   function verifyProvider(name) {
@@ -147,12 +152,8 @@ Item {
     if (verifyProc.running) { error = "Another backend test is still running."; return }
     verifying = "ocr:" + name; verifyProc.command = [speakBin, "--verify-ocr", name]; verifyProc.running = true
   }
-  function selectOcrEngine(name) { setConfig(".ocr.engine", name) }
-  function refreshUsage(name) {
-    error = ""
-    if (usageProc.running) { error = "Usage is already being refreshed."; return }
-    refreshingUsage = name; usageProc.command = [speakBin, "--usage", name]; usageProc.running = true
-  }
+  property string afterConfigVerifyOcr: ""
+  function selectOcrEngine(name, verify) { if (verify) afterConfigVerifyOcr = name; setConfig(".ocr.engine", name) }
   property string refreshingLanguages: ""
   function refreshLanguages(engine) {
     error = ""
@@ -162,19 +163,6 @@ Item {
     languageRefreshProc.running = true
   }
   function installLanguage(code) { startSetup("lang:" + code) }
-  function refreshVoices(name) {
-    error = ""
-    if (voiceRefreshProc.running) { error = "Voices are already being refreshed."; return }
-    refreshingVoices = name
-    voiceRefreshProc.command = [speakBin, "--refresh-voices", name]
-    voiceRefreshProc.running = true
-  }
-  function providerSupportsVoiceRefresh(name) {
-    var providers = info.providers || []
-    for (var i = 0; i < providers.length; ++i)
-      if (providers[i].name === name) return providers[i].refreshVoices === true
-    return false
-  }
   function previewText(text) {
     pendingPreview = String(text).slice(0, 32768)
     if (previewProc.running) {
@@ -211,27 +199,25 @@ Item {
     setupStartProc.running = true
   }
   function installProvider(provider) {
-    var targets = ({ "piper": "piper", "kokoro": "kokoro", "easyocr": "easyocr" })
+    var targets = ({ "piper": "piper", "kokoro": "kokoro", "kokoro_onnx": "kokoro_onnx", "easyocr": "easyocr" })
     if (targets[provider]) startSetup(targets[provider])
   }
-  function cancelSetup() { if (setupCancellable) action([setupBin, "cancel"]) }
-  function storeKey(provider, key, purpose) {
-    if (["openai", "elevenlabs", "google", "gemini"].indexOf(provider) < 0 || key.length < 8) return
-    if (keyProc.running || keySaving) { error = "A key is already being saved."; return }
-    error = ""
-    pendingKey = key; pendingKeyProvider = provider; pendingKeyPurpose = purpose || "speech"
-    keySaving = true; keyResult = { ok: false, message: "" }
-    keyProc.command = [setupBin, "key-store", provider]; restart(keyProc)
+  function uninstall(target) {
+    var targets = ["piper", "kokoro", "kokoro_onnx_cpu", "kokoro_onnx_gpu", "easyocr"]
+    if (targets.indexOf(target) >= 0) action([setupBin, "uninstall", target])
   }
-  function removeKey(provider) { if (["openai", "elevenlabs", "google", "gemini"].indexOf(provider) >= 0) action([setupBin, "key-remove", provider]) }
+  function cancelSetup() { if (setupCancellable) action([setupBin, "cancel"]) }
 
   Process {
     id: configProc; command: []; stdinEnabled: true
     onStarted: { write(root.pendingConfigValue + "\n"); root.pendingConfigValue = "" }
     stderr: StdioCollector { waitForEnd: true; onStreamFinished: if (text.trim()) root.error = text.trim() }
     onRunningChanged: if (!running) {
-      if (root.configQueue.length > 0) Qt.callLater(root.runNextConfig)
-      else root.refresh()
+      if (root.configQueue.length > 0) { Qt.callLater(root.runNextConfig); return }
+      if (root.afterConfigSetup !== "") { var target = root.afterConfigSetup; root.afterConfigSetup = ""; root.startSetup(target) }
+      if (root.afterConfigVerify !== "") { var name = root.afterConfigVerify; root.afterConfigVerify = ""; root.verifyProvider(name) }
+      else if (root.afterConfigVerifyOcr !== "") { var engine = root.afterConfigVerifyOcr; root.afterConfigVerifyOcr = ""; root.verifyOcrEngine(engine) }
+      root.refresh()
     }
   }
   Process {
@@ -293,19 +279,9 @@ Item {
     }
   }
   Process {
-    id: usageProc; command: []
-    stderr: StdioCollector { waitForEnd: true; onStreamFinished: if (text.trim()) root.error = text.trim() }
-    onRunningChanged: if (!running) { root.refreshingUsage = ""; root.refresh() }
-  }
-  Process {
     id: languageRefreshProc; command: []
     stderr: StdioCollector { waitForEnd: true; onStreamFinished: if (text.trim()) root.error = text.trim() }
     onRunningChanged: if (!running) { root.refreshingLanguages = ""; root.refresh() }
-  }
-  Process {
-    id: voiceRefreshProc; command: []
-    stderr: StdioCollector { waitForEnd: true; onStreamFinished: if (text.trim()) root.error = text.trim() }
-    onRunningChanged: if (!running) { root.refreshingVoices = ""; root.refresh() }
   }
   Process {
     id: actionProc; command: []
@@ -532,34 +508,6 @@ Item {
           root.refresh()
         }
       }
-    }
-  }
-  Process {
-    id: keyProc; command: []; stdinEnabled: true
-    onStarted: { write(root.pendingKey + "\n"); root.pendingKey = "" }
-    stdout: StdioCollector { id: keyStdout; waitForEnd: true }
-    stderr: StdioCollector { id: keyStderr; waitForEnd: true }
-    onExited: function(exitCode, exitStatus) {
-      // A run this controller killed with restart() is not a result; the
-      // replacement run reports. Treating the kill as a failure painted
-      // "Could not read TTS setup status" over a working install.
-      if (exitStatus !== 0) return
-      var result = null
-      try { result = JSON.parse(String(keyStdout.text || "")) } catch (e) {}
-      var ok = exitCode === 0 && result && result.ok === true
-      root.keyResult = {
-        ok: ok,
-        message: ok ? ("Key saved securely." + (result.warning ? " " + result.warning : ""))
-                    : ((result && result.message) || String(keyStderr.text || "Could not save the key.").trim())
-      }
-      root.keySaving = false
-      if (ok && root.pendingKeyPurpose === "speech"
-          && root.providerSupportsVoiceRefresh(root.pendingKeyProvider))
-        root.refreshVoices(root.pendingKeyProvider)
-      root.pendingKey = ""
-      root.pendingKeyProvider = ""
-      root.pendingKeyPurpose = "speech"
-      root.refresh()
     }
   }
   Timer { id: downloadPoll; interval: 1000; repeat: true; running: false; onTriggered: if (!downloadStatusProc.running) downloadStatusProc.running = true }
