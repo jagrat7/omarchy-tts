@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # desc: Fast and deterministic on ordinary screen text. The default.
 # title: Tesseract
-# kind: local
 # probe: command -v tesseract >/dev/null 2>&1
 # confidence: true
 # Reads a PNG on stdin, writes recognised text on stdout.

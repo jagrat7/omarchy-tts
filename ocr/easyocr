@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 # desc: Stronger on stylised and low-contrast text. Heavy, slow to start.
 # title: EasyOCR
-# kind: local
 # installsize: about 6 GB
 # installnote: Better on stylised text; slow to load on every capture.
-# probe: [[ -x "${EASYOCR_PYTHON:-${TTS_DATA_DIR:-$HOME/.local/share/omarchy-tts}/engines/easyocr/bin/python}" && -s "${EASYOCR_MODELS:-${TTS_DATA_DIR:-$HOME/.local/share/omarchy-tts}/engines/easyocr/models}/craft_mlt_25k.pth" ]] && ( [[ -n "${EASYOCR_PYTHON:-}" ]] || [[ "$(cat "${TTS_DATA_DIR:-$HOME/.local/share/omarchy-tts}/engines/easyocr/.lock-sha256" 2>/dev/null)" == "$(sha256sum "$TTS_PLUGIN_DIR/lib/engines/easyocr.lock" | cut -d' ' -f1)" ]] )
+# probe: [[ -x "${EASYOCR_PYTHON:-${TTS_DATA_DIR:-$HOME/.local/share/omarchy-tts-local}/engines/easyocr/bin/python}" && -s "${EASYOCR_MODELS:-${TTS_DATA_DIR:-$HOME/.local/share/omarchy-tts-local}/engines/easyocr/models}/craft_mlt_25k.pth" ]] && ( [[ -n "${EASYOCR_PYTHON:-}" ]] || [[ "$(cat "${TTS_DATA_DIR:-$HOME/.local/share/omarchy-tts-local}/engines/easyocr/.lock-sha256" 2>/dev/null)" == "$(sha256sum "$TTS_PLUGIN_DIR/lib/engines/easyocr.lock" | cut -d' ' -f1)" ]] )
 # install: easyocr
 # confidence: true
 # Reads a PNG on stdin, writes recognised text on stdout.
@@ -12,7 +11,7 @@ set -uo pipefail
 umask 077
 source "$TTS_PLUGIN_DIR/lib/play.sh"
 
-ENGINE_DIR="${TTS_DATA_DIR:-$HOME/.local/share/omarchy-tts}/engines/easyocr"
+ENGINE_DIR="${TTS_DATA_DIR:-$HOME/.local/share/omarchy-tts-local}/engines/easyocr"
 EPY="${EASYOCR_PYTHON:-$ENGINE_DIR/bin/python}"
 MODELS="${EASYOCR_MODELS:-$ENGINE_DIR/models}"
 IMAGE_MAX_BYTES=52428800
@@ -94,9 +93,9 @@ if [[ -n "$unmapped" ]]; then
 fi
 [[ ${#codes[@]} -gt 0 ]] || codes=(en)
 
-img="$(mktemp "${XDG_RUNTIME_DIR:-/tmp}/omarchy-tts-easyocr.XXXXXX.png")" || exit 1
+img="$(mktemp "${XDG_RUNTIME_DIR:-/tmp}/omarchy-tts-local-easyocr.XXXXXX.png")" || exit 1
 trap 'rm -f "$img"' EXIT
-errlog="$(mktemp "${XDG_RUNTIME_DIR:-/tmp}/omarchy-tts-easyocr.XXXXXX.log")" || exit 1
+errlog="$(mktemp "${XDG_RUNTIME_DIR:-/tmp}/omarchy-tts-local-easyocr.XXXXXX.log")" || exit 1
 trap 'rm -f "$img" "$errlog"' EXIT
 head -c "$((IMAGE_MAX_BYTES + 1))" > "$img"
 [[ "$(stat -c%s "$img" 2>/dev/null || printf 0)" -le "$IMAGE_MAX_BYTES" ]] || {

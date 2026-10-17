@@ -3,7 +3,32 @@
 All notable changes are documented here. This project follows Semantic
 Versioning.
 
-## Unreleased
+## 2.0.0 - Unreleased
+
+- **Breaking:** renamed to Omarchy TTS Local (`io.github.jagrat7.omarchy-tts-local`).
+  Config, data, cache and runtime paths move from `omarchy-tts` to
+  `omarchy-tts-local`; the first run of any tool moves the old config, data
+  and cache directories over, so installed engines and voices are kept. A
+  shortcut block written under the old name is still recognised, flagged in
+  the Keys tab, and rewritten with the new plugin path on Apply changes.
+- **Breaking:** remove every cloud service. The OpenAI, ElevenLabs, Gemini and
+  Google Cloud speech providers and the OpenAI and Google Cloud Vision OCR
+  engines are gone, along with API-key storage, usage telemetry, account voice
+  refresh (`--refresh-voices`, `--usage`, `speak-setup key-store` /
+  `key-remove`) and the Local/Cloud groups in the Provider and Screen tabs.
+  Speech and screen reading now always run on this computer.
+- Config schema 5: a configuration that selected a removed provider or OCR
+  engine moves to Piper or Tesseract, and the removed services' settings and
+  `.ui.collapsed` are dropped.
+- `speak-setup cleanup --yes` still clears API keys earlier versions stored in
+  the keyring.
+- Provider tab: Kokoro PyTorch and Kokoro ONNX share one Kokoro row. A slider
+  switches between installed variants and appears only once there are two; +
+  lists the variants not installed, with sizes, and installs one inline with
+  progress and Cancel. A variant that installs and passes its test is offered
+  with Switch / Later. The device line, + and uninstall show on the row in
+  use. Providers group by new `# family:`, `# variant:` and `# variantnote:`
+  headers, reported by `speak --info`.
 
 ## 1.4.0 - 2026-09-30
 

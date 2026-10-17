@@ -21,19 +21,12 @@ Item {
   property var setup: ({ ready: false, engineReady: false, voiceReady: false })
   property bool setupLoaded: false
   property var setupJob: ({ status: "idle", step: "", progress: 0, message: "" })
-  property var keyResult: ({ ok: false, message: "" })
   property string preview: ""
   property string error: ""
   property string verifying: ""
-  property string refreshingUsage: ""
-  property string refreshingVoices: ""
   property bool downloadStarting: false
   property string pendingDownloadVoice: ""
   property bool setupStarting: false
-  property string pendingKey: ""
-  property string pendingKeyProvider: ""
-  property string pendingKeyPurpose: "speech"
-  property bool keySaving: false
   property string pendingSpeech: ""
   property string pendingPreview: ""
   property string pendingConfigValue: ""
@@ -161,11 +154,6 @@ Item {
   }
   property string afterConfigVerifyOcr: ""
   function selectOcrEngine(name, verify) { if (verify) afterConfigVerifyOcr = name; setConfig(".ocr.engine", name) }
-  function refreshUsage(name) {
-    error = ""
-    if (usageProc.running) { error = "Usage is already being refreshed."; return }
-    refreshingUsage = name; usageProc.command = [speakBin, "--usage", name]; usageProc.running = true
-  }
   property string refreshingLanguages: ""
   function refreshLanguages(engine) {
     error = ""
@@ -175,19 +163,6 @@ Item {
     languageRefreshProc.running = true
   }
   function installLanguage(code) { startSetup("lang:" + code) }
-  function refreshVoices(name) {
-    error = ""
-    if (voiceRefreshProc.running) { error = "Voices are already being refreshed."; return }
-    refreshingVoices = name
-    voiceRefreshProc.command = [speakBin, "--refresh-voices", name]
-    voiceRefreshProc.running = true
-  }
-  function providerSupportsVoiceRefresh(name) {
-    var providers = info.providers || []
-    for (var i = 0; i < providers.length; ++i)
-      if (providers[i].name === name) return providers[i].refreshVoices === true
-    return false
-  }
   function previewText(text) {
     pendingPreview = String(text).slice(0, 32768)
     if (previewProc.running) {
@@ -232,15 +207,6 @@ Item {
     if (targets.indexOf(target) >= 0) action([setupBin, "uninstall", target])
   }
   function cancelSetup() { if (setupCancellable) action([setupBin, "cancel"]) }
-  function storeKey(provider, key, purpose) {
-    if (["openai", "elevenlabs", "google", "gemini"].indexOf(provider) < 0 || key.length < 8) return
-    if (keyProc.running || keySaving) { error = "A key is already being saved."; return }
-    error = ""
-    pendingKey = key; pendingKeyProvider = provider; pendingKeyPurpose = purpose || "speech"
-    keySaving = true; keyResult = { ok: false, message: "" }
-    keyProc.command = [setupBin, "key-store", provider]; restart(keyProc)
-  }
-  function removeKey(provider) { if (["openai", "elevenlabs", "google", "gemini"].indexOf(provider) >= 0) action([setupBin, "key-remove", provider]) }
 
   Process {
     id: configProc; command: []; stdinEnabled: true
@@ -313,19 +279,9 @@ Item {
     }
   }
   Process {
-    id: usageProc; command: []
-    stderr: StdioCollector { waitForEnd: true; onStreamFinished: if (text.trim()) root.error = text.trim() }
-    onRunningChanged: if (!running) { root.refreshingUsage = ""; root.refresh() }
-  }
-  Process {
     id: languageRefreshProc; command: []
     stderr: StdioCollector { waitForEnd: true; onStreamFinished: if (text.trim()) root.error = text.trim() }
     onRunningChanged: if (!running) { root.refreshingLanguages = ""; root.refresh() }
-  }
-  Process {
-    id: voiceRefreshProc; command: []
-    stderr: StdioCollector { waitForEnd: true; onStreamFinished: if (text.trim()) root.error = text.trim() }
-    onRunningChanged: if (!running) { root.refreshingVoices = ""; root.refresh() }
   }
   Process {
     id: actionProc; command: []
@@ -552,34 +508,6 @@ Item {
           root.refresh()
         }
       }
-    }
-  }
-  Process {
-    id: keyProc; command: []; stdinEnabled: true
-    onStarted: { write(root.pendingKey + "\n"); root.pendingKey = "" }
-    stdout: StdioCollector { id: keyStdout; waitForEnd: true }
-    stderr: StdioCollector { id: keyStderr; waitForEnd: true }
-    onExited: function(exitCode, exitStatus) {
-      // A run this controller killed with restart() is not a result; the
-      // replacement run reports. Treating the kill as a failure painted
-      // "Could not read TTS setup status" over a working install.
-      if (exitStatus !== 0) return
-      var result = null
-      try { result = JSON.parse(String(keyStdout.text || "")) } catch (e) {}
-      var ok = exitCode === 0 && result && result.ok === true
-      root.keyResult = {
-        ok: ok,
-        message: ok ? ("Key saved securely." + (result.warning ? " " + result.warning : ""))
-                    : ((result && result.message) || String(keyStderr.text || "Could not save the key.").trim())
-      }
-      root.keySaving = false
-      if (ok && root.pendingKeyPurpose === "speech"
-          && root.providerSupportsVoiceRefresh(root.pendingKeyProvider))
-        root.refreshVoices(root.pendingKeyProvider)
-      root.pendingKey = ""
-      root.pendingKeyProvider = ""
-      root.pendingKeyPurpose = "speech"
-      root.refresh()
     }
   }
   Timer { id: downloadPoll; interval: 1000; repeat: true; running: false; onTriggered: if (!downloadStatusProc.running) downloadStatusProc.running = true }

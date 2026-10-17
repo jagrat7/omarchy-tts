@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 # desc: Fast, natural, runs here. The default.
 # title: Piper
-# kind: local
 # installsize: about 230 MB
 # installnote: Engine and one voice.
-# probe: ([[ -x "${TTS_DATA_DIR:-$HOME/.local/share/omarchy-tts}/engines/piper/bin/piper" && "$(cat "${TTS_DATA_DIR:-$HOME/.local/share/omarchy-tts}/engines/piper/.lock-sha256" 2>/dev/null)" == "$(sha256sum "$TTS_PLUGIN_DIR/lib/engines/piper.lock" | cut -d' ' -f1)" ]] || command -v piper >/dev/null) && (for model in "${PIPER_VOICES_DIR:-${TTS_DATA_DIR:-$HOME/.local/share/omarchy-tts}/voices/piper}"/*.onnx "$HOME/.local/share/piper-voices"/*.onnx; do [[ -s "$model" && -s "$model.json" ]] && exit 0; done; exit 1)
+# probe: ([[ -x "${TTS_DATA_DIR:-$HOME/.local/share/omarchy-tts-local}/engines/piper/bin/piper" && "$(cat "${TTS_DATA_DIR:-$HOME/.local/share/omarchy-tts-local}/engines/piper/.lock-sha256" 2>/dev/null)" == "$(sha256sum "$TTS_PLUGIN_DIR/lib/engines/piper.lock" | cut -d' ' -f1)" ]] || command -v piper >/dev/null) && (for model in "${PIPER_VOICES_DIR:-${TTS_DATA_DIR:-$HOME/.local/share/omarchy-tts-local}/voices/piper}"/*.onnx "$HOME/.local/share/piper-voices"/*.onnx; do [[ -s "$model" && -s "$model.json" ]] && exit 0; done; exit 1)
 # install: managed venv · piper-tts==1.7.0
 # voices: downloadable
 # ratemin: 0.5
@@ -14,17 +13,17 @@ umask 077
 source "$TTS_PLUGIN_DIR/lib/play.sh"
 # The managed engine counts only when it was built from the lock this
 # release ships; otherwise fall through to a distribution-installed piper.
-ENGINE_DIR="${TTS_DATA_DIR:-$HOME/.local/share/omarchy-tts}/engines/piper"
+ENGINE_DIR="${TTS_DATA_DIR:-$HOME/.local/share/omarchy-tts-local}/engines/piper"
 PIPER_BIN="$ENGINE_DIR/bin/piper"
 if [[ "$(cat "$ENGINE_DIR/.lock-sha256" 2>/dev/null)" != "$(sha256sum "$TTS_PLUGIN_DIR/lib/engines/piper.lock" | cut -d' ' -f1)" ]]; then PIPER_BIN=""; fi
 [[ -x "$PIPER_BIN" ]] || PIPER_BIN="$(command -v piper || true)"
 [[ -n "$PIPER_BIN" ]] || need piper "install it from the Provider tab"
 
-VOICES_DIR="${PIPER_VOICES_DIR:-${TTS_DATA_DIR:-$HOME/.local/share/omarchy-tts}/voices/piper}"
+VOICES_DIR="${PIPER_VOICES_DIR:-${TTS_DATA_DIR:-$HOME/.local/share/omarchy-tts-local}/voices/piper}"
 # Voice model and sidecar are a single installation. Hold a shared lock while
 # Piper reads/uses them so repair/removal cannot expose a mixed pair.
-VOICE_STATE_DIR="${XDG_RUNTIME_DIR:+$XDG_RUNTIME_DIR/omarchy-tts}"
-VOICE_STATE_DIR="${VOICE_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/omarchy-tts/run}"
+VOICE_STATE_DIR="${XDG_RUNTIME_DIR:+$XDG_RUNTIME_DIR/omarchy-tts-local}"
+VOICE_STATE_DIR="${VOICE_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/omarchy-tts-local/run}"
 [[ ! -L "$VOICE_STATE_DIR" ]] || {
   printf 'speak: unsafe Piper runtime directory symlink: %s\n' "$VOICE_STATE_DIR" >&2
   exit 1

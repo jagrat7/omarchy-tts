@@ -1,37 +1,38 @@
-# Omarchy TTS
+# Omarchy TTS Local
 
-> **Fork of [hikari112/omarchy-tts](https://github.com/hikari112/omarchy-tts)**
-> adding a fast Kokoro ONNX provider, a CPU/GPU choice for Kokoro, and a fix
-> for false shortcut conflicts on Lua-configured Hyprland. See
-> [CHANGELOG.md](CHANGELOG.md) under 1.4.0.
+> **Local-only fork of [hikari112/omarchy-tts](https://github.com/hikari112/omarchy-tts).**
+> Every cloud provider and OCR engine is removed, so nothing you read leaves
+> this computer. It adds a fast Kokoro ONNX provider, a CPU/GPU choice for
+> Kokoro, and a fix for false shortcut conflicts on Lua-configured Hyprland.
+> See [CHANGELOG.md](CHANGELOG.md).
 
-[![CI](https://github.com/hikari112/omarchy-tts/actions/workflows/ci.yml/badge.svg)](https://github.com/hikari112/omarchy-tts/actions/workflows/ci.yml)
+[![CI](https://github.com/jagrat7/omarchy-tts/actions/workflows/ci.yml/badge.svg)](https://github.com/jagrat7/omarchy-tts/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Omarchy](https://img.shields.io/badge/Omarchy-Quattro-f97316.svg)](https://omarchy.org/)
 
 **Anything on your screen can speak.**
 
-Omarchy TTS turns speech into a desktop command: indicate something, hear it,
+Omarchy TTS Local turns speech into a desktop command: indicate something, hear it,
 then stop. Read a selection, the clipboard, a clipboard image, a window, the
 focused monitor, or a region you draw around otherwise unreachable text.
 
 > Not a screen reader. Not a reading platform. Just a hotkey that makes the
 > thing in front of you speak.
 
-It is on-demand, local-first, and app-independent. Piper is the on-device
-default; cloud providers are optional voices, never silent dependencies. There
-is no narration mode, required account, subscription, browser extension, or
-text import workflow.
+It is on-demand, local-only, and app-independent. Speech and screen reading
+run on this computer, and nothing you read is sent anywhere. There is no
+narration mode, account, subscription, API key, browser extension, or text
+import workflow.
 
 <p align="center">
-  <img src="docs/screenshots/provider.png" alt="Omarchy TTS Provider tab showing local and optional cloud speech providers" width="620">
+  <img src="docs/screenshots/provider.png" alt="Omarchy TTS Local Provider tab showing the local speech providers" width="620">
 </p>
 
 ## Why this exists
 
 Sometimes you do not want the entire desktop narrated. You want *this paragraph*,
 *this dialog*, or *this tiny line of game text* read once, immediately. Omarchy
-TTS keeps that interaction consistent even when the source changes:
+TTS Local keeps that interaction consistent even when the source changes:
 
 | What you indicate | What the plugin does |
 |---|---|
@@ -55,21 +56,26 @@ Click the speaker in the bar. The welcome screen installs the recommended
 local engine and voice; the **Keys** tab installs the shortcuts. Both are
 guided, cancellable operations—no terminal setup or manual config editing.
 
+Coming from `io.github.hikari112.tts` or an earlier build of this fork? The
+first run moves `~/.config/omarchy-tts`, `~/.local/share/omarchy-tts` and
+`~/.cache/omarchy-tts` to their `omarchy-tts-local` names, so installed
+engines, voices and settings carry over. Remove the old plugin, then press
+**Apply changes** on the Keys tab so the shortcuts point at the new one.
+
 ## Requirements
 
 The base plugin uses `bash`, `wl-clipboard`, `jq`, `python3`, `flock`
 (util-linux), and PipeWire or ALSA. Screen-reading modes additionally use
-`tesseract`, `grim`, `slurp`, and optionally `hyprpicker`. Cloud providers use
-`curl`, as do voice-catalogue refreshes and downloads; secure key storage uses
-`secret-tool` (libsecret). These system tools ship with Omarchy or are installed
-from its configured Arch repositories.
+`tesseract`, `grim`, `slurp`, and optionally `hyprpicker`. Voice-catalogue
+refreshes and downloads use `curl`. These system tools ship with Omarchy or are
+installed from its configured Arch repositories.
 
 The guided local-engine setup is always explicit. It may request administrator
 approval through `pkexec` to install `uv` or a `tesseract-data-*` language
 pack; `pkexec` and `pacman` are used only at their fixed system paths, checked
 to be root-owned and unwritable by others immediately before each privileged
 call, never resolved from `PATH`. Engines are built with `uv` into isolated
-environments under `~/.local/share/omarchy-tts/` from complete, hash-pinned
+environments under `~/.local/share/omarchy-tts-local/` from complete, hash-pinned
 dependency locks shipped in the plugin (`lib/engines/*.lock`, applied with
 `uv pip sync --require-hashes`): Piper (`piper-tts==1.7.0`), Kokoro
 (`kokoro==0.9.4` with its spaCy model wheel) and EasyOCR (`easyocr==1.7.2`),
@@ -112,8 +118,6 @@ speak --list                  # list providers
 speak --provider kokoro       # override for one run
 speak --verify kokoro         # prove a provider can speak (silent)
 speak --verify-ocr easyocr    # prove an engine can read a known image
-speak --usage elevenlabs      # refresh paid-plan usage (JSON)
-speak --refresh-voices google # refresh a cloud provider's voice list
 speak --refresh-languages     # re-read which OCR languages are installed
 ```
 
@@ -139,9 +143,8 @@ opening anything, or to stop the current speech.
 Six tabs, and a Test dock that stays visible on all of them so you can hear
 a change straight after making it:
 
-- **Provider** — all six at once, each showing whether it actually works on
-  this machine. Cloud providers carry a standing note that text leaves the
-  machine, and the Test dock says `runs locally` or names the vendor.
+- **Provider** — every speech engine at once, each showing whether it
+  actually works on this machine, with its CPU/GPU choice and uninstall.
 - **Voice** — installed voice, speed, length limit, and **Browse all voices**:
   over 170 downloadable voices across 50+ languages, showing which
   are installed, with size and a one-click download that reports progress and
@@ -156,7 +159,7 @@ on first use, migrated additively, written atomically, and kept mode 0600.
 Everything the panel shows
 comes from `speak --info`, and everything it changes goes through
 the same CLI boundary: persisted settings use `speak --set`, while engine,
-voice, key, and shortcut lifecycle actions use their dedicated commands. The
+voice, and shortcut lifecycle actions use their dedicated commands. The
 panel is therefore a front-end to the tested command-line implementation, not
 a second implementation of it.
 
@@ -165,11 +168,11 @@ a second implementation of it.
 
 | Provider | Voice |
 |---|---|
-| ![Provider status, privacy, models, and usage](docs/screenshots/provider.png) | ![Voice, speed, and length settings](docs/screenshots/voice.png) |
+| ![Provider status and devices](docs/screenshots/provider.png) | ![Voice, speed, and length settings](docs/screenshots/voice.png) |
 
 | Text | Screen |
 |---|---|
-| ![Live sanitizer preview and text rules](docs/screenshots/text.png) | ![Recognition engines with privacy notes and the confidence floor](docs/screenshots/screen.png) |
+| ![Live sanitizer preview and text rules](docs/screenshots/text.png) | ![Recognition engines and the confidence floor](docs/screenshots/screen.png) |
 
 | Languages | Keys |
 |---|---|
@@ -195,8 +198,6 @@ speak --screen     # the focused monitor            (no pointer)
 `--clipboard` detects PNG, JPEG, WebP, BMP, or TIFF image-only clipboard
 content and sends it through the selected OCR engine. Text is preferred when
 an application places both text and image representations on the clipboard.
-OpenAI Vision accepts PNG, JPEG, and WebP; choosing it for BMP or TIFF fails
-locally with a format explanation instead of uploading mislabeled bytes.
 
 Because capture happens at the Wayland compositor level, region and window
 reading can also work over fullscreen Steam/Proton games; it has been tested in
@@ -209,20 +210,13 @@ not an option for you.
 ### Recognition engines
 
 Engines are chosen on the Screen tab the same way voices are: listed, proven,
-then selected. Tesseract is the local default; heavier or cloud-backed engines
-are explicit opt-ins.
+then selected. Tesseract is the default; EasyOCR is an explicit opt-in. Both
+read captures on this computer.
 
-| Engine | Kind | When to use it |
+| Engine | Default | When to use it |
 |---|---|---|
-| `tesseract` | local, default | Fast and deterministic on ordinary screen text. |
-| `easyocr` | local, opt-in | Stylised, italic, or low-contrast text the default gives up on — game dialogue, posters, video frames. Costs about 6 GB of disk in a private Python environment and several seconds of model loading per capture. |
-| `google` | cloud, opt-in | Google Cloud Vision, a purpose-built OCR API with per-word confidence, so the confidence floor applies exactly as it does locally. **Every capture is sent as an image to Google**, including `--window` and `--screen`. Needs a Google Cloud project with the Vision API enabled and an API key. |
-| `openai` | cloud, opt-in | A vision model transcribing the image; accurate, but reports no confidence, so the floor cannot apply. **Every capture is sent as an image to OpenAI**, including `--window` and `--screen`. Uses the same key as the OpenAI speech provider. |
-
-The Screen tab says plainly which of these is true for the engine you have
-selected; a cloud engine turns the "captures are read on this computer" line
-into a statement of where they go instead.
-
+| `tesseract` | yes | Fast and deterministic on ordinary screen text. |
+| `easyocr` | opt-in | Stylised, italic, or low-contrast text the default gives up on — game dialogue, posters, video frames. Costs about 6 GB of disk in a private Python environment and several seconds of model loading per capture. |
 Languages are kept per engine. Tesseract combines any of its 120+ language
 packs; EasyOCR pairs most languages only with English and reads a
 `tesseract`-style code list through a mapping, so a selection tesseract accepts
@@ -231,11 +225,11 @@ stops and says so rather than reading garbage.
 
 Engines live in `ocr/` and follow the same contract as voice providers: an
 executable reading a PNG on stdin and writing text on stdout, with the same
-`# desc:` / `# kind:` / `# probe:` header. `~/.config/omarchy-tts/ocr/`
+`# desc:` / `# probe:` header. `~/.config/omarchy-tts-local/ocr/`
 shadows the bundled ones. An engine is only reported ready after it has read
 `lib/ocr-probe.png` correctly.
 
-**Low-confidence words are discarded.** Local engines report a per-word (or
+**Low-confidence words are discarded.** Engines report a per-word (or
 per-line) confidence score, and anything below `ocr.minConfidence` (default 60) is dropped rather
 than spoken. Someone using this to read a screen they cannot check has no way
 to notice an invented word, so silence is preferred to noise. Set it to `0` to
@@ -250,20 +244,15 @@ read back as one. short. burst. per. line.
 
 Bundled, all optional except piper:
 
-| Provider | Kind | Notes |
-|----------|------|-------|
-| `piper` | local | **default** — neural, fast, ~60 MB/voice |
-| `kokoro_onnx` | local | Kokoro voices on ONNX Runtime; under a second to start; **CPU** engine ~480 MB or **GPU** engine ~2.3 GB (CUDA libraries included); opt-in |
-| `kokoro` | local | Kokoro on PyTorch; ~6 GB, several seconds to start every time; CPU or GPU; opt-in |
-| `openai` | cloud | opt-in; **text leaves your machine** |
-| `elevenlabs` | cloud | opt-in; **text leaves your machine** |
-| `gemini` | cloud | opt-in; Gemini TTS, 30 named voices, speed fixed by the service; takes a Vertex AI key by default (`speak --set .gemini.api developer` for an AI Studio key); **text leaves your machine** |
-| `google` | cloud | opt-in; Cloud Text-to-Speech, voices fetched from the account, speed slider honoured; shares the `google` key with the Vision OCR engine; **text leaves your machine** |
-
-Google lists well over a thousand voices. The Voice tab browses them with
-search, language, gender and family filters rather than a dropdown.
-Google requests are rejected locally above the service's 5,000-byte UTF-8
-limit, which matters for text whose characters occupy multiple bytes.
+| Provider | Notes |
+|----------|-------|
+| `piper` | **default** — neural, fast, ~60 MB/voice |
+| `kokoro_onnx` | Kokoro voices on ONNX Runtime; under a second to start; **CPU** engine ~480 MB or **GPU** engine ~2.3 GB (CUDA libraries included); opt-in |
+| `kokoro` | Kokoro on PyTorch; ~6 GB, several seconds to start every time; CPU or GPU; opt-in |
+Both Kokoro providers share one **Kokoro** row in the Provider tab. Once more
+than one is installed, a slider switches between them; **+** lists the ones
+you do not have yet, with their size, and installs one inline. A freshly
+installed engine is tested, then offered with **Switch** or **Later**.
 
 Kokoro providers show a **Run on CPU / GPU** switch in the Provider tab
 (`speak --set .kokoro_onnx.device gpu`). For `kokoro_onnx` the device picks
@@ -275,15 +264,22 @@ synthesises long passages several times faster.
 presses skip model loading (`speak --set .kokoro_onnx.keepWarm 0` to turn it
 off; a warm GPU engine holds about 1.3 GB of video memory).
 
-`espeak-ng` and Speech Dispatcher were removed in 1.3.0; a configuration
-that still names one is moved to Piper on first run.
+`espeak-ng` and Speech Dispatcher were removed in 1.3.0, and the cloud
+providers (OpenAI, ElevenLabs, Gemini, Google Cloud Text-to-Speech) and cloud
+OCR engines (OpenAI, Google Cloud Vision) in 2.0.0. A configuration that still
+names one is moved to Piper or Tesseract on first run.
+
+Public speech input is limited to 1 MiB and captured images to 50 MiB before
+any processing, and a provider's declared character and byte limits are
+enforced before it runs.
 
 ### Bring your own
 
 A provider is any executable that reads text on stdin and plays it. A
 `# title:` line gives it a display name; `# desc:` is a sentence or two shown
-beneath it. Drop one
-in `~/.config/omarchy-tts/providers/` and it shadows the bundled provider of
+beneath it. Providers with the same `# family:` share a row as its variants,
+labelled by `# variant:` and described by a short `# variantnote:`. Drop one
+in `~/.config/omarchy-tts-local/providers/` and it shadows the bundled provider of
 the same name.
 
 ```bash
@@ -293,67 +289,33 @@ exec my-tts-engine --voice "${TTS_VOICE:-default}" --speed "${TTS_RATE:-1.0}"
 ```
 
 Speech providers receive `TTS_VOICE`, `TTS_RATE`, `TTS_PLUGIN_DIR`,
-`TTS_CONFIG`, `TTS_DATA_DIR`, `TTS_METRICS_FILE`, `TTS_INPUT_CHARS`, and
-`TTS_INPUT_BYTES`.
+`TTS_CONFIG`, `TTS_DATA_DIR`, `TTS_INPUT_CHARS`, and `TTS_INPUT_BYTES`.
 Verification also sets `TTS_SILENT=1`: the provider must perform its strongest
 non-audible readiness check, produce no sound, and exit zero only on success.
-Providers that generate an audio stream can discard it; providers without a
-null output path should validate their live service connection without queuing
-speech.
-
-### Cloud API keys
-
-Add or remove speech keys from **Provider** and OCR keys from **Screen**. They
-are entered in a masked field and stored in the system keyring, never in the
-plugin settings or logs.
-The panel clearly marks providers that send text off the machine. Paid
-providers also show the configured model, locally observed request/character
-counts, last request status, and rate-limit headers. **Refresh usage** reads
-ElevenLabs plan usage and reset time directly from its subscription API.
-OpenAI request and token limits update from response headers; organization-wide
-usage is deliberately not queried with the normal speech key because that API
-requires a separate organization admin key.
-
-ElevenLabs and Google Cloud voice lists are fetched only when **Refresh cloud
-voices** is pressed (or `speak --refresh-voices <provider>` is run). Merely
-opening the panel never contacts a provider. The account-specific list is kept
-in the private cache and refresh output reports only its item count.
-
-Cloud telemetry and voice metadata are stored mode 0600 under
-`~/.cache/omarchy-tts/`. Telemetry contains counts, timestamps, request IDs,
-limits, and normalized error codes. Neither cache contains API keys, selected
-text, or provider response bodies.
-
-Inputs and remote responses are bounded before expensive processing: public
-speech input is limited to 1 MiB, captured images to 50 MiB, and every bundled
-cloud adapter applies a provider-specific response or audio ceiling. Service
-character and byte limits are enforced locally before a request is sent.
-
-Environment variables take precedence over keyring entries. If an environment
-key is rejected, the panel names the authoritative variable and asks you to
-update or unset it; saving another key cannot silently pretend to override it.
+Providers that generate an audio stream can discard it.
 
 ## Remove
 
 Before removing the plugin, use **Keys → Remove shortcuts** so no shortcuts
-are left behind, and remove cloud keys from the Provider tab if desired. Then:
+are left behind. If an earlier version stored cloud API keys in your keyring,
+`speak-setup cleanup --yes` removes those along with the shortcuts. Then:
 
 ```bash
-omarchy plugin remove io.github.hikari112.tts
+omarchy plugin remove io.github.jagrat7.omarchy-tts-local
 ```
 
 Removal deliberately leaves downloaded engines, voice models, settings, and
 cache data intact to avoid destroying user data. They remain clearly grouped
-under `~/.local/share/omarchy-tts`, `~/.config/omarchy-tts`, and
-`~/.cache/omarchy-tts` for optional manual cleanup.
+under `~/.local/share/omarchy-tts-local`, `~/.config/omarchy-tts-local`, and
+`~/.cache/omarchy-tts-local` for optional manual cleanup.
 
 ## Config
 
-`~/.config/omarchy-tts/config.json` — provider, voice, OCR, sanitizer, and UI
+`~/.config/omarchy-tts-local/config.json` — provider, voice, OCR, sanitizer, and UI
 preferences. `rate` accepts 0.25–4.0; the panel narrows that range to what the
 selected provider supports. `maxChars` accepts 0–1,048,576, where `0` means no
 sanitizer truncation (the independent 1 MiB input safety limit still applies).
-The current additive schema is version 4.
+The current additive schema is version 5.
 
 ## The sanitizer
 
@@ -366,7 +328,7 @@ you the word "hash", not thirty seconds of hex.
 Test it standalone:
 
 ```bash
-cat something.md | python3 ~/.config/omarchy/plugins/io.github.hikari112.tts/lib/sanitize.py
+cat something.md | python3 ~/.config/omarchy/plugins/io.github.jagrat7.omarchy-tts-local/lib/sanitize.py
 ```
 
 ## Development
@@ -381,9 +343,9 @@ For hot reload during development, clone the repository and symlink that clone
 to Omarchy's stable plugin location:
 
 ```bash
-git clone https://github.com/hikari112/omarchy-tts.git
+git clone https://github.com/jagrat7/omarchy-tts.git
 ln -s "$PWD/omarchy-tts" \
-  "${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/plugins/io.github.hikari112.tts"
+  "${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/plugins/io.github.jagrat7.omarchy-tts-local"
 ```
 
 Saving a file in the clone then reloads the widget. The link command

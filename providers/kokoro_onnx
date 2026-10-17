@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # desc: Kokoro quality, fast start. Runs on CPU or GPU.
 # title: Kokoro ONNX
-# kind: local
+# family: Kokoro
+# variant: ONNX
+# variantnote: fast start
 # installsize-cpu: about 480 MB
 # installnote-cpu: Engine and 27 English voices.
 # installsize-gpu: about 2.3 GB
 # installnote-gpu: Includes CUDA libraries. Needs an NVIDIA GPU; uses about 1.3 GB of VRAM while loaded.
-# probe: d="${TTS_DEVICE:-$(jq -r '.kokoro_onnx.device // "cpu"' "$TTS_CONFIG" 2>/dev/null)}"; e=kokoro_onnx; [[ "$d" == gpu ]] && e=kokoro_onnx_gpu; dir="${TTS_DATA_DIR:-$HOME/.local/share/omarchy-tts}/engines/$e"; [[ -x "$dir/bin/python" && -s "$dir/models/kokoro-v1.0.onnx" && -s "$dir/models/voices-v1.0.bin" && "$(cat "$dir/.lock-sha256" 2>/dev/null)" == "$(sha256sum "$TTS_PLUGIN_DIR/lib/engines/$e.lock" | cut -d' ' -f1)" ]]
+# probe: d="${TTS_DEVICE:-$(jq -r '.kokoro_onnx.device // "cpu"' "$TTS_CONFIG" 2>/dev/null)}"; e=kokoro_onnx; [[ "$d" == gpu ]] && e=kokoro_onnx_gpu; dir="${TTS_DATA_DIR:-$HOME/.local/share/omarchy-tts-local}/engines/$e"; [[ -x "$dir/bin/python" && -s "$dir/models/kokoro-v1.0.onnx" && -s "$dir/models/voices-v1.0.bin" && "$(cat "$dir/.lock-sha256" 2>/dev/null)" == "$(sha256sum "$TTS_PLUGIN_DIR/lib/engines/$e.lock" | cut -d' ' -f1)" ]]
 # install: managed Python 3.12 venv from lib/engines/kokoro_onnx.lock (CPU) or kokoro_onnx_gpu.lock (GPU) · verified model files
 # voices: bundled
 # devices: cpu gpu
@@ -20,7 +22,7 @@ DEVICE="$(jq -r '.kokoro_onnx.device // "cpu"' "$TTS_CONFIG" 2>/dev/null)"
 [[ "$DEVICE" == gpu ]] || DEVICE=cpu
 ENGINE_NAME=kokoro_onnx
 [[ "$DEVICE" == gpu ]] && ENGINE_NAME=kokoro_onnx_gpu
-ENGINE_DIR="${TTS_DATA_DIR:-$HOME/.local/share/omarchy-tts}/engines/$ENGINE_NAME"
+ENGINE_DIR="${TTS_DATA_DIR:-$HOME/.local/share/omarchy-tts-local}/engines/$ENGINE_NAME"
 KPY="$ENGINE_DIR/bin/python"
 if [[ ! -x "$KPY" ]]; then
   echo "speak: kokoro_onnx ($DEVICE) not installed." >&2
@@ -81,7 +83,7 @@ TEXT="$(cat)"
 KEEP_WARM="$(jq -r '.kokoro_onnx.keepWarm // 10' "$TTS_CONFIG" 2>/dev/null)"
 [[ "$KEEP_WARM" =~ ^[0-9]+$ ]] || KEEP_WARM=10
 if [[ "$KEEP_WARM" -gt 0 ]]; then
-  RUN_DIR="${XDG_RUNTIME_DIR:-/tmp}/omarchy-tts"
+  RUN_DIR="${XDG_RUNTIME_DIR:-/tmp}/omarchy-tts-local"
   mkdir -p "$RUN_DIR" && chmod 700 "$RUN_DIR"
   SOCKET="$RUN_DIR/$ENGINE_NAME.sock"
   ask_server() {

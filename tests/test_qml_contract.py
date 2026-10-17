@@ -13,11 +13,11 @@ class QmlContractTests(unittest.TestCase):
     def setUpClass(cls):
         cls.panel = (ROOT / "Panel.qml").read_text()
         cls.controller = (ROOT / "components" / "TtsController.qml").read_text()
-        cls.key_dialog = (ROOT / "components" / "ApiKeyDialog.qml").read_text()
         cls.wizard = (ROOT / "components" / "FirstRunWizard.qml").read_text()
         cls.inline_action = (ROOT / "components" / "InlineAction.qml").read_text()
         cls.key_row = (ROOT / "components" / "KeyRow.qml").read_text()
         cls.setting_toggle = (ROOT / "components" / "SettingToggle.qml").read_text()
+        cls.segmented = (ROOT / "components" / "SegmentedControl.qml").read_text()
 
     def test_every_local_install_confirmation_uses_the_shared_component(self):
         component = (ROOT / "components" / "EngineConfirm.qml").read_text()
@@ -38,12 +38,23 @@ class QmlContractTests(unittest.TestCase):
                          next(line for line in self.controller.splitlines()
                               if "function startSetup" in line))
 
-    def test_key_save_keeps_speech_and_ocr_purposes_distinct(self):
-        self.assertIn('property string purpose: "speech"', self.key_dialog)
-        self.assertIn("controller.storeKey(provider, keyField.text, purpose)", self.key_dialog)
-        self.assertIn('purpose: "speech"', self.panel)
-        self.assertIn('purpose: "ocr"', self.panel)
-        self.assertIn('pendingKeyPurpose === "speech"', self.controller)
+    def test_variant_slider_holds_only_installed_variants(self):
+        # Variants share a row by `# family:`; the slider lists what is
+        # installed, appears only with a choice to make, and + lists the rest.
+        self.assertIn("Repeater { model: root.providerEntries; delegate: providerRow }", self.panel)
+        start = self.panel.index("SegmentedControl {")
+        slider = self.panel[start:self.panel.index("}", self.panel.index("onSelected", start))]
+        self.assertIn("entry.installed.map", slider)
+        self.assertIn("entry.selected && entry.installed.length > 1", slider)
+        self.assertIn("model: entry.adding ? entry.available : []", self.panel)
+        self.assertIn("readonly property bool showAdd: isFamily && available.length > 0", self.panel)
+
+    def test_variant_install_is_offered_only_after_its_own_job_finishes(self):
+        watcher = self.panel[self.panel.index("function onSetupJobChanged()"):]
+        watcher = watcher[:watcher.index("\n    }\n")]
+        self.assertIn("root.pendingSeen = true", watcher)
+        self.assertIn('status === "done" && !root.pendingSeen', watcher)
+        self.assertIn("root.provedVariant = root.pendingVariant", watcher)
 
     def test_panel_scrolls_and_yields_non_tab_keys_to_controls(self):
         self.assertIn("ScrollView {", self.panel)
@@ -57,36 +68,23 @@ class QmlContractTests(unittest.TestCase):
         self.assertIn("Keys.priority: Keys.BeforeItem", self.panel)
         self.assertIn("event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab", self.panel)
 
-    def test_hidden_key_dialogs_do_not_retain_credentials(self):
-        self.assertIn('else keyField.text = ""', self.key_dialog)
-        self.assertIn('apiProvider = ""; apiVendor = ""', self.panel)
-        self.assertIn('ocrApiProvider = ""; ocrApiVendor = ""', self.panel)
-
     def test_provider_actions_are_declared_by_backend_metadata(self):
-        self.assertIn("root.activeProvider.refreshVoices === true", self.panel)
-        self.assertIn("modelData.refreshUsage === true", self.panel)
         start = self.panel.index(
             "visible: root.activeProvider && Number(root.activeProvider.maxBytes || 0) > 0"
         )
         caption = self.panel[start:self.panel.index("color: root.dim", start)]
         self.assertIn("text: root.activeProvider", caption)
         self.assertIn(': ""', caption)
-        self.assertNotIn('root.activeProvider.name === "elevenlabs" || root.activeProvider.name === "google"',
-                         self.panel)
 
     def test_retryable_controller_actions_clear_stale_errors(self):
         for signature in (
                 "function speak(text)", "function stop()",
                 "function verifyProvider(name)", "function verifyOcrEngine(name)",
-                "function refreshUsage(name)", "function refreshLanguages(engine)",
-                "function refreshVoices(name)"):
+                "function refreshLanguages(engine)"):
             start = self.controller.index(signature)
             following = self.controller.find("\n  function ", start + len(signature))
             body = self.controller[start:following if following >= 0 else None]
             self.assertIn('error = ""', body, signature)
-        key_start = self.controller.index("function storeKey(provider, key, purpose)")
-        key_body = self.controller[key_start:self.controller.index("function removeKey", key_start)]
-        self.assertIn('error = ""', key_body)
 
     def test_duplicate_job_starts_reconnect_to_the_backend_owner(self):
         self.assertIn('result.code === "already_running"', self.controller)
@@ -116,7 +114,7 @@ class QmlContractTests(unittest.TestCase):
         self.assertIn("infoQueued = true", refresh)
 
     def test_interactive_custom_controls_expose_keyboard_and_accessibility(self):
-        for source in (self.inline_action, self.key_row, self.setting_toggle):
+        for source in (self.inline_action, self.key_row, self.setting_toggle, self.segmented):
             self.assertIn("activeFocusOnTab", source)
             self.assertIn("Accessible.role", source)
             self.assertIn("Accessible.onPressAction", source)
@@ -126,7 +124,7 @@ class QmlContractTests(unittest.TestCase):
         self.assertIn("IntValidator { bottom: 0; top: 1048576 }", self.panel)
         self.assertIn("Math.min(1048576", self.panel)
 
-    def test_first_run_counts_only_locally_usable_or_credentialed_providers(self):
+    def test_first_run_counts_only_usable_providers(self):
         self.assertIn("readonly property bool hasUsableProvider", self.panel)
         self.assertIn('all[i].status === "ready" || all[i].status === "untested"',
                       self.panel)
@@ -166,18 +164,17 @@ class QmlContractTests(unittest.TestCase):
         self.assertIn("onExited: function(exitCode, exitStatus)", block)
         self.assertNotIn("root.infoQueued = true", block)
 
-    def test_cloud_backend_operations_are_not_killed_and_restarted(self):
+    def test_slow_backend_operations_are_not_killed_and_restarted(self):
         start = self.controller.index("function verifyProvider")
-        block = self.controller[start:self.controller.index("function providerSupportsVoiceRefresh", start)]
+        block = self.controller[start:self.controller.index("function previewText", start)]
         self.assertIn("if (verifyProc.running)", block)
-        self.assertIn("if (usageProc.running)", block)
-        self.assertIn("if (voiceRefreshProc.running)", block)
+        self.assertIn("if (languageRefreshProc.running)", block)
         self.assertNotIn("restart(", block)
 
     def test_executable_urls_support_encoded_install_paths(self):
         self.assertIn("decodeURIComponent(value.slice(7))", self.controller)
 
-    def test_user_and_remote_content_is_never_auto_detected_as_rich_text(self):
+    def test_user_content_is_never_auto_detected_as_rich_text(self):
         self.assertIn("textFormat: Text.PlainText", self.inline_action)
         preview = self.panel[self.panel.index('text: controller.preview || "Spoken preview"') - 120:
                              self.panel.index('text: controller.preview || "Spoken preview"') + 80]
