@@ -1,5 +1,6 @@
 import QtQuick
 import qs.Commons
+import qs.Commons as Commons
 
 // A row of equal pills with a highlight that slides to the chosen one, for
 // picking one of a few options (a provider's installed variants).
@@ -8,7 +9,7 @@ Rectangle {
   // [{ value, label }]
   property var options: []
   property string value: ""
-  property color foreground: Color.popups.text
+  property color foreground: Commons.Color.popups.text
   property string fontFamily: Style.font.family
   signal selected(string value)
 
@@ -17,7 +18,7 @@ Rectangle {
     return -1
   }
   readonly property real pillWidth: (width - 4) / Math.max(1, options.length)
-  function tint(a) { return Qt.rgba(Color.accent.r, Color.accent.g, Color.accent.b, a) }
+  function tint(a) { return Qt.rgba(Commons.Color.accent.r, Commons.Color.accent.g, Commons.Color.accent.b, a) }
 
   width: parent ? parent.width : implicitWidth
   implicitHeight: pills.implicitHeight + 4
@@ -54,7 +55,7 @@ Rectangle {
         Text {
           id: label; anchors.centerIn: parent
           textFormat: Text.PlainText; text: parent.modelData.label
-          color: parent.chosen ? Color.accent : root.foreground
+          color: parent.chosen ? Commons.Color.accent : root.foreground
           font.family: root.fontFamily; font.pixelSize: Style.font.caption
           font.bold: parent.chosen; font.underline: parent.activeFocus
         }

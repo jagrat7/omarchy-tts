@@ -19,6 +19,16 @@ class QmlContractTests(unittest.TestCase):
         cls.setting_toggle = (ROOT / "components" / "SettingToggle.qml").read_text()
         cls.segmented = (ROOT / "components" / "SegmentedControl.qml").read_text()
 
+    def test_theme_colours_are_never_shadowed_by_qt_color(self):
+        # Qt 6.12 added a QtQuick `Color` singleton that wins over an
+        # unqualified qs.Commons Color, leaving every theme colour undefined.
+        for path in [ROOT / "Panel.qml", *sorted((ROOT / "components").glob("*.qml"))]:
+            with self.subTest(path.name):
+                source = path.read_text()
+                self.assertIsNone(re.search(r"(?<![\w.])Color\.", source))
+                if "Commons.Color." in source:
+                    self.assertIn("import qs.Commons as Commons\n", source)
+
     def test_every_local_install_confirmation_uses_the_shared_component(self):
         component = (ROOT / "components" / "EngineConfirm.qml").read_text()
         self.assertIn("target.installInfo", component)

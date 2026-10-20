@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 
 // Confirmation for installing or removing any engine the plugin manages,
@@ -19,7 +20,7 @@ Rectangle {
   // Uninstall: the engine in use, so removing it can say what will stop.
   property string activeName: ""
   property string inUseWarning: "This is the voice in use. Pick another provider afterwards or the shortcuts will stop speaking."
-  property color foreground: Color.popups.text
+  property color foreground: Commons.Color.popups.text
   property string fontFamily: Style.font.family
   signal cancelled()
   // `engineTarget` is what `speak-setup uninstall` takes; installs ignore it.
@@ -47,9 +48,9 @@ Rectangle {
   width: parent ? parent.width : implicitWidth
   height: content.implicitHeight + 16
   radius: 6
-  color: Qt.rgba(Color.accent.r, Color.accent.g, Color.accent.b, 0.08)
+  color: Qt.rgba(Commons.Color.accent.r, Commons.Color.accent.g, Commons.Color.accent.b, 0.08)
   border.width: 1
-  border.color: Color.popups.border
+  border.color: Commons.Color.popups.border
 
   Column {
     id: content
@@ -68,21 +69,21 @@ Rectangle {
       width: parent.width; wrapMode: Text.WordWrap; textFormat: Text.PlainText
       text: root.removing ? "Frees " + info.size + "."
           : "󰀪  " + (info.size ? "Downloads " + info.size + (info.note ? ". " : "") : "") + (info.note || "")
-      color: root.removing ? Color.muted : Color.accent
+      color: root.removing ? Commons.Color.muted : Commons.Color.accent
       font.family: root.fontFamily; font.pixelSize: Style.font.caption
     }
     Text {
       visible: root.removesInUse
       width: parent.width; wrapMode: Text.WordWrap
       text: "󰀪  " + root.inUseWarning
-      color: Color.urgent; font.family: root.fontFamily; font.pixelSize: Style.font.caption
+      color: Commons.Color.urgent; font.family: root.fontFamily; font.pixelSize: Style.font.caption
     }
     Text {
       width: parent.width; wrapMode: Text.WordWrap
       text: !root.removing ? "Tested before it replaces anything; rolled back if it fails."
           : root.removableDevices.length > 1 ? "Choose which engine to remove; the other keeps working."
           : "You can install it again later."
-      color: Color.muted; font.family: root.fontFamily; font.pixelSize: Style.font.caption
+      color: Commons.Color.muted; font.family: root.fontFamily; font.pixelSize: Style.font.caption
     }
     Flow {
       width: parent.width; spacing: 8
@@ -96,7 +97,7 @@ Rectangle {
               : root.removableDevices.length > 1
                 ? "Remove " + modelData.toUpperCase() + " engine" + (root.details(modelData).size ? " (" + root.details(modelData).size + ")" : "")
                 : "Uninstall"
-          bordered: true; focusable: true; foreground: root.removing ? Color.urgent : Color.accent
+          bordered: true; focusable: true; foreground: root.removing ? Commons.Color.urgent : Commons.Color.accent
           onClicked: root.confirmed(root.target ? root.engineTarget(modelData) : "")
         }
       }

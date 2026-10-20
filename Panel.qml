@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Window
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import "components"
 
@@ -14,8 +15,8 @@ Panel {
   property var anchorItem: null
   property var hostWidget: null
   readonly property var barIdentity: hostWidget || root
-  readonly property color fg: Color.popups.text
-  readonly property color dim: Color.muted
+  readonly property color fg: Commons.Color.popups.text
+  readonly property color dim: Commons.Color.muted
   readonly property string ff: bar ? bar.fontFamily : Style.font.family
   property int currentTab: 0
   readonly property var tabNames: ["Provider", "Voice", "Text", "Screen", "Languages", "Keys"]
@@ -126,7 +127,7 @@ Panel {
     return !!item && item !== keyCatcher && root.isInsideKeyCatcher(item)
   }
 
-  function tint(a) { return Qt.rgba(Color.accent.r, Color.accent.g, Color.accent.b, a) }
+  function tint(a) { return Qt.rgba(Commons.Color.accent.r, Commons.Color.accent.g, Commons.Color.accent.b, a) }
   function keyName(event) {
     var key = event.text ? event.text.toUpperCase() : ""
     if (event.key === Qt.Key_BracketLeft) key = "BRACKETLEFT"
@@ -479,7 +480,7 @@ Panel {
 
         Item {
           width: parent.width; height: Math.max(headerIcon.implicitHeight, headerTitle.implicitHeight)
-          Text { id: headerIcon; text: "󰕾"; color: controller.speaking ? Color.accent : root.fg; font.family: root.ff; font.pixelSize: Style.fontPx(1.3); anchors.verticalCenter: parent.verticalCenter }
+          Text { id: headerIcon; text: "󰕾"; color: controller.speaking ? Commons.Color.accent : root.fg; font.family: root.ff; font.pixelSize: Style.fontPx(1.3); anchors.verticalCenter: parent.verticalCenter }
           Text { id: headerTitle; anchors.left: headerIcon.right; anchors.leftMargin: Style.space(8); anchors.verticalCenter: parent.verticalCenter; text: "Text to speech"; color: root.fg; font.family: root.ff; font.pixelSize: Style.font.subtitle }
           Text { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; // The shortcut is the whole point of the tool; the panel is where
                  // someone finds out what it is.
@@ -505,7 +506,7 @@ Panel {
               Keys.onReturnPressed: root.currentTab = index
               Keys.onEnterPressed: root.currentTab = index
               Text { id: tabLabel; text: parent.modelData; color: root.currentTab === parent.index ? root.fg : root.dim; font.family: root.ff; font.pixelSize: Style.font.body }
-              Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 2; color: Color.accent; visible: root.currentTab === parent.index }
+              Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 2; color: Commons.Color.accent; visible: root.currentTab === parent.index }
               MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.currentTab = parent.index }
             }
           }
@@ -567,7 +568,7 @@ Panel {
                 }
               }
               width: parent ? parent.width : 0; height: providerCopy.implicitHeight + Style.space(12); radius: Style.space(6)
-              color: selected ? root.tint(0.10) : "transparent"; border.width: selected || activeFocus ? 1 : 0; border.color: activeFocus ? Color.accent : root.tint(0.45)
+              color: selected ? root.tint(0.10) : "transparent"; border.width: selected || activeFocus ? 1 : 0; border.color: activeFocus ? Commons.Color.accent : root.tint(0.45)
               activeFocusOnTab: usable
               Accessible.role: Accessible.RadioButton
               Accessible.name: (isFamily ? modelData.family + " " + (p.variant || "") : (p.title || p.name)) + ", " + p.status
@@ -580,7 +581,7 @@ Panel {
                 id: providerCopy; z: 1; anchors.left: parent.left; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; anchors.leftMargin: Style.space(8); anchors.rightMargin: Style.space(8); spacing: Style.space(4)
                 Item {
                   width: parent.width; height: providerName.implicitHeight
-                  Text { id: providerRadio; text: entry.selected ? "󰝥" : "󰝦"; color: entry.ready ? (entry.selected ? Color.accent : root.fg) : root.dim; font.family: root.ff; font.pixelSize: Style.font.body }
+                  Text { id: providerRadio; text: entry.selected ? "󰝥" : "󰝦"; color: entry.ready ? (entry.selected ? Commons.Color.accent : root.fg) : root.dim; font.family: root.ff; font.pixelSize: Style.font.body }
                   Text { id: providerName; anchors.left: providerRadio.right; anchors.leftMargin: 8; textFormat: Text.PlainText; text: entry.isFamily ? entry.modelData.family : (entry.p.title || entry.p.name); color: entry.usable ? root.fg : root.dim; font.family: root.ff; font.pixelSize: Style.font.body }
                   // With one variant there is no slider, so the name says which.
                   Text { anchors.left: providerName.right; anchors.leftMargin: 6; anchors.baseline: providerName.baseline; visible: entry.isFamily && entry.installed.length > 0 && !(entry.selected && entry.installed.length > 1); textFormat: Text.PlainText; text: entry.p.variant || ""; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
@@ -588,7 +589,7 @@ Panel {
                     text: entry.failing ? "Not working" : entry.ready ? "● Ready" : ""
                     // urgent is otherwise reserved for Stop, but a backend that is
                     // present and cannot speak is a genuine fault, not an absence.
-                    color: entry.failing ? Color.urgent : entry.ready ? Color.accent : root.dim
+                    color: entry.failing ? Commons.Color.urgent : entry.ready ? Commons.Color.accent : root.dim
                     font.family: root.ff
                     font.pixelSize: Style.font.caption
                   }
@@ -600,7 +601,7 @@ Panel {
                             if (entry.failing && entry.p.install) return "Repair"
                             if (entry.failing) return "Retry"
                             return "Install" }
-                    color: Color.accent
+                    color: Commons.Color.accent
                     font.family: root.ff
                     font.pixelSize: Style.font.caption
                     onTriggered: entry.activateAction()
@@ -614,7 +615,7 @@ Panel {
                   foreground: root.fg; fontFamily: root.ff
                   onSelected: function(name) { root.chooseVariant(entry.installed.find(function(m) { return m.name === name })) }
                 }
-                Text { visible: entry.failing; width: parent.width; wrapMode: Text.WordWrap; text: "Installed, but it produced no audio when tested. Press Test to try again."; color: Color.urgent; font.family: root.ff; font.pixelSize: Style.font.caption }
+                Text { visible: entry.failing; width: parent.width; wrapMode: Text.WordWrap; text: "Installed, but it produced no audio when tested. Press Test to try again."; color: Commons.Color.urgent; font.family: root.ff; font.pixelSize: Style.font.caption }
                 Text { visible: entry.p.deprecated === true; width: parent.width; wrapMode: Text.WordWrap; text: "Compatibility provider retained for upgrades. Choose Piper for continued support and better speech quality."; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
                 // Where it runs, and adding or removing variants: only on the row in use.
                 Item {
@@ -626,14 +627,14 @@ Panel {
                     visible: entry.showDevices
                     spacing: 10
                     Text { text: deviceRow.devices.length > 1 ? "Run on" : "Runs on"; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
-                    Text { visible: deviceRow.devices.length === 1; text: String(deviceRow.devices[0] || "").toUpperCase(); color: Color.accent; font.family: root.ff; font.pixelSize: Style.font.caption }
+                    Text { visible: deviceRow.devices.length === 1; text: String(deviceRow.devices[0] || "").toUpperCase(); color: Commons.Color.accent; font.family: root.ff; font.pixelSize: Style.font.caption }
                     Repeater {
                       model: deviceRow.devices.length > 1 ? deviceRow.devices : []
                       delegate: InlineAction {
                         required property string modelData
                         readonly property bool chosen: (entry.p.device || "cpu") === modelData
                         text: (chosen ? "󰝥 " : "󰝦 ") + modelData.toUpperCase()
-                        color: chosen ? Color.accent : root.fg
+                        color: chosen ? Commons.Color.accent : root.fg
                         font.family: root.ff; font.pixelSize: Style.font.caption
                         enabled: !chosen
                         Accessible.checked: chosen
@@ -648,13 +649,13 @@ Panel {
                       visible: entry.showAdd
                       text: entry.adding ? "󰅖" : "󰐕"
                       Accessible.name: entry.adding ? "Close" : "Add another " + entry.modelData.family + " engine"
-                      color: hovered || activeFocus ? Color.accent : root.dim; font.family: root.ff; font.pixelSize: Style.font.caption
+                      color: hovered || activeFocus ? Commons.Color.accent : root.dim; font.family: root.ff; font.pixelSize: Style.font.caption
                       onTriggered: root.addingFamily = entry.adding ? "" : entry.modelData.family
                     }
                     InlineAction {
                       id: providerUninstall
                       visible: entry.showUninstall
-                      text: "󰆴"; Accessible.name: "Uninstall"; color: hovered || activeFocus ? Color.urgent : root.dim; font.family: root.ff; font.pixelSize: Style.font.caption
+                      text: "󰆴"; Accessible.name: "Uninstall"; color: hovered || activeFocus ? Commons.Color.urgent : root.dim; font.family: root.ff; font.pixelSize: Style.font.caption
                       onTriggered: root.confirmUninstall = entry.p.name
                     }
                   }
@@ -678,25 +679,25 @@ Panel {
                       InlineAction {
                         id: variantAction; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
                         text: parent.parent.busy ? "Cancel" : "Install"
-                        color: parent.parent.busy ? root.dim : Color.accent
+                        color: parent.parent.busy ? root.dim : Commons.Color.accent
                         enabled: parent.parent.busy ? controller.setupCancellable : !root.setupBusy
                         font.family: root.ff; font.pixelSize: Style.font.caption
                         onTriggered: parent.parent.busy ? controller.cancelSetup() : root.installVariant(parent.parent.modelData)
                       }
                     }
                     Rectangle {
-                      width: parent.width; height: 3; radius: 1.5; visible: parent.busy; color: Color.popups.border
-                      Rectangle { height: parent.height; radius: parent.radius; color: Color.accent
+                      width: parent.width; height: 3; radius: 1.5; visible: parent.busy; color: Commons.Color.popups.border
+                      Rectangle { height: parent.height; radius: parent.radius; color: Commons.Color.accent
                                   width: parent.width * Math.max(0.02, Math.min(1, Number(controller.setupJob.progress || 0) / 100)) }
                     }
                   }
                 }
                 Item {
                   width: parent.width; height: provedText.implicitHeight; visible: entry.proved !== null
-                  Text { id: provedText; textFormat: Text.PlainText; text: "󰄬 " + (entry.proved ? (entry.proved.variant || entry.proved.name) : "") + " works"; color: Color.accent; font.family: root.ff; font.pixelSize: Style.font.caption }
+                  Text { id: provedText; textFormat: Text.PlainText; text: "󰄬 " + (entry.proved ? (entry.proved.variant || entry.proved.name) : "") + " works"; color: Commons.Color.accent; font.family: root.ff; font.pixelSize: Style.font.caption }
                   Row {
                     anchors.right: parent.right; spacing: 12
-                    InlineAction { text: "Switch"; color: Color.accent; font.family: root.ff; font.pixelSize: Style.font.caption
+                    InlineAction { text: "Switch"; color: Commons.Color.accent; font.family: root.ff; font.pixelSize: Style.font.caption
                                    onTriggered: { controller.selectProvider(entry.proved.name, false); root.provedVariant = "" } }
                     InlineAction { text: "Later"; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption
                                    onTriggered: root.provedVariant = "" }
@@ -733,7 +734,7 @@ Panel {
             visible: controller.setupStarting || controller.setupJob.status === "running" || controller.setupJob.status === "starting" || controller.setupJob.status === "error"
             textFormat: Text.PlainText
             text: controller.setupStarting ? "Starting setup safely…" : controller.setupJob.message; wrapMode: Text.WordWrap
-            color: controller.setupJob.status === "error" ? Color.urgent : root.dim
+            color: controller.setupJob.status === "error" ? Commons.Color.urgent : root.dim
             font.family: root.ff; font.pixelSize: Style.font.caption
           }
         }
@@ -743,7 +744,7 @@ Panel {
           width: parent.width; spacing: Style.space(10); visible: !root.needsSetup && root.currentTab === 1 && !root.browsing
           PanelSectionHeader { text: "Voice"; foreground: root.fg }
           Dropdown { id: voiceDropdown; width: parent.width; showLabel: false; foreground: root.fg; options: root.voiceOptions.length ? root.voiceOptions : [{ label: "No voice installed", value: "" }]; value: controller.info.voice || ""; onValueChanged: if (value && value !== controller.info.voice && value !== "No voice installed") controller.setConfig(controller.info.voicePath || ".piper.voice", value) }
-          Button { width: parent.width; text: controller.info.voices?.length ? "Browse all voices" : "Download a voice"; iconText: "󰇚"; bordered: true; focusable: true; foreground: controller.info.voices?.length ? root.fg : Color.accent; visible: !root.activeProvider || root.activeProvider.voices === "downloadable"; onClicked: { root.browsing = true; root.voiceFilter = ""; controller.loadCatalogue() } }
+          Button { width: parent.width; text: controller.info.voices?.length ? "Browse all voices" : "Download a voice"; iconText: "󰇚"; bordered: true; focusable: true; foreground: controller.info.voices?.length ? root.fg : Commons.Color.accent; visible: !root.activeProvider || root.activeProvider.voices === "downloadable"; onClicked: { root.browsing = true; root.voiceFilter = ""; controller.loadCatalogue() } }
           Item {
             width: parent.width; height: speedHeader.implicitHeight
             PanelSectionHeader { id: speedHeader; text: "Speed"; foreground: root.fg }
@@ -808,7 +809,7 @@ Panel {
           Item {
             width: parent.width; height: browseHeader.implicitHeight
             PanelSectionHeader { id: browseHeader; text: root.installedCount + " installed · " + ((controller.catalogue || []).length - root.installedCount) + " available"; foreground: root.fg }
-            InlineAction { anchors.right: parent.right; text: "Done"; color: Color.accent; font.family: root.ff; font.pixelSize: Style.font.caption; onTriggered: root.browsing = false }
+            InlineAction { anchors.right: parent.right; text: "Done"; color: Commons.Color.accent; font.family: root.ff; font.pixelSize: Style.font.caption; onTriggered: root.browsing = false }
           }
           TextField { id: voiceFilterField; width: parent.width; placeholderText: "Search voices"; text: root.voiceFilter; foreground: root.fg; onTextChanged: root.voiceFilter = text }
           Text {
@@ -826,7 +827,7 @@ Panel {
               delegate: InlineAction {
                 required property var modelData
                 text: modelData.label
-                color: root.voiceSort === modelData.key ? Color.accent : root.dim
+                color: root.voiceSort === modelData.key ? Commons.Color.accent : root.dim
                 font.family: root.ff; font.pixelSize: Style.font.caption
                 anchors.verticalCenter: parent ? parent.verticalCenter : undefined
                 Accessible.role: Accessible.RadioButton
@@ -864,7 +865,7 @@ Panel {
               function activateAction() { if (busy) controller.cancelDownload(); else if (modelData.installed) root.confirmVoiceRemove = modelData.key; else controller.downloadVoice(modelData.key) }
               width: ListView.view.width; height: 42; radius: 5; color: modelData.installed ? root.tint(.07) : "transparent"
               activeFocusOnTab: modelData.installed && modelData.key !== controller.info.voice
-              border.width: activeFocus ? 1 : 0; border.color: Color.accent
+              border.width: activeFocus ? 1 : 0; border.color: Commons.Color.accent
               Accessible.role: Accessible.Button
               Accessible.name: "Use " + root.voiceLabel(modelData.key)
               Accessible.onPressAction: activateRow()
@@ -875,7 +876,7 @@ Panel {
               InlineAction {
                 id: voiceAction; z: 2; anchors.right: parent.right; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter
                 text: parent.modelData.installed ? (parent.modelData.key === controller.info.voice ? "󰄬 Active" : "Remove") : (parent.busy ? (controller.downloadCancellable ? controller.download.percent + "% · Cancel" : "Starting…") : (parent.modelData.key === controller.info.voice ? "Repair · " : "󰇚 ") + parent.modelData.sizeMB + " MB")
-                color: parent.modelData.installed || parent.busy ? Color.accent : root.dim; font.family: root.ff; font.pixelSize: Style.font.caption
+                color: parent.modelData.installed || parent.busy ? Commons.Color.accent : root.dim; font.family: root.ff; font.pixelSize: Style.font.caption
                 enabled: (!parent.modelData.installed || parent.modelData.key !== controller.info.voice)
                          && (!parent.busy || controller.downloadCancellable)
                 onTriggered: parent.activateAction()
@@ -885,12 +886,12 @@ Panel {
           }
           Rectangle {
             width: parent.width; height: voiceRemoveRow.implicitHeight + 16; radius: 6
-            visible: root.confirmVoiceRemove !== ""; color: root.tint(0.08); border.width: 1; border.color: Color.popups.border
+            visible: root.confirmVoiceRemove !== ""; color: root.tint(0.08); border.width: 1; border.color: Commons.Color.popups.border
             Row {
               id: voiceRemoveRow; anchors.fill: parent; anchors.margins: 8; spacing: 8
               Text { width: parent.width - cancelVoice.width - removeVoice.width - 24; elide: Text.ElideMiddle; textFormat: Text.PlainText; text: "Remove " + root.voiceLabel(root.confirmVoiceRemove) + "?" + (root.removeSizeMB > 0 ? "  Frees " + root.removeSizeMB + " MB." : ""); color: root.fg; font.family: root.ff; font.pixelSize: Style.font.caption }
               Button { id: cancelVoice; text: "Cancel"; bordered: true; focusable: true; onClicked: root.confirmVoiceRemove = "" }
-              Button { id: removeVoice; text: "Remove"; bordered: true; focusable: true; foreground: Color.urgent; onClicked: { controller.removeVoice(root.confirmVoiceRemove); root.confirmVoiceRemove = "" } }
+              Button { id: removeVoice; text: "Remove"; bordered: true; focusable: true; foreground: Commons.Color.urgent; onClicked: { controller.removeVoice(root.confirmVoiceRemove); root.confirmVoiceRemove = "" } }
             }
           }
           Text { text: "Storage: ~/.local/share/omarchy-tts-local/voices/piper"; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
@@ -904,7 +905,7 @@ Panel {
             width: parent.width; spacing: 8
             Rectangle {
               width: (parent.width - 8) / 2; height: 94; radius: 6; clip: true
-              color: Color.background; border.width: 1; border.color: Color.popups.border
+              color: Commons.Color.background; border.width: 1; border.color: Commons.Color.popups.border
               TextArea {
                 id: previewInput
                 anchors.fill: parent; anchors.margins: 6
@@ -924,7 +925,7 @@ Panel {
                 }
               }
             }
-            Rectangle { width: (parent.width - 8) / 2; height: 94; radius: 6; clip: true; color: root.tint(.06); border.width: 1; border.color: Color.popups.border; Text { anchors.fill: parent; anchors.margins: 6; textFormat: Text.PlainText; text: controller.preview || "Spoken preview"; color: root.fg; wrapMode: Text.WordWrap; clip: true; elide: Text.ElideRight; maximumLineCount: 5; font.family: root.ff; font.pixelSize: Style.font.caption } }
+            Rectangle { width: (parent.width - 8) / 2; height: 94; radius: 6; clip: true; color: root.tint(.06); border.width: 1; border.color: Commons.Color.popups.border; Text { anchors.fill: parent; anchors.margins: 6; textFormat: Text.PlainText; text: controller.preview || "Spoken preview"; color: root.fg; wrapMode: Text.WordWrap; clip: true; elide: Text.ElideRight; maximumLineCount: 5; font.family: root.ff; font.pixelSize: Style.font.caption } }
           }
           SettingToggle { label: "Read URLs as ‘link’"; checked: controller.info.sanitizer?.urls === "link"; foreground: root.fg; onToggled: function(value) { controller.setConfig(".sanitizer.urls", value ? "link" : "domain") } }
           SettingToggle { label: "Read inline code"; checked: controller.info.sanitizer?.inlineCode !== false; foreground: root.fg; onToggled: function(value) { controller.setConfig(".sanitizer.inlineCode", value) } }
@@ -968,7 +969,7 @@ Panel {
                 }
               }
               width: parent ? parent.width : 0; height: engineCopy.implicitHeight + Style.space(12); radius: Style.space(6)
-              color: selected ? root.tint(0.10) : "transparent"; border.width: selected || activeFocus ? 1 : 0; border.color: activeFocus ? Color.accent : root.tint(0.45)
+              color: selected ? root.tint(0.10) : "transparent"; border.width: selected || activeFocus ? 1 : 0; border.color: activeFocus ? Commons.Color.accent : root.tint(0.45)
               activeFocusOnTab: usable
               Accessible.role: Accessible.RadioButton
               Accessible.name: (modelData.title || modelData.name) + ", " + modelData.status
@@ -981,13 +982,13 @@ Panel {
                 id: engineCopy; z: 1; anchors.left: parent.left; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; anchors.leftMargin: Style.space(8); anchors.rightMargin: Style.space(8); spacing: 2
                 Item {
                   width: parent.width; height: engineName.implicitHeight
-                  Text { id: engineRadio; text: parent.parent.parent.selected ? "󰝥" : "󰝦"; color: parent.parent.parent.ready ? (parent.parent.parent.selected ? Color.accent : root.fg) : root.dim; font.family: root.ff; font.pixelSize: Style.font.body }
+                  Text { id: engineRadio; text: parent.parent.parent.selected ? "󰝥" : "󰝦"; color: parent.parent.parent.ready ? (parent.parent.parent.selected ? Commons.Color.accent : root.fg) : root.dim; font.family: root.ff; font.pixelSize: Style.font.body }
                   Text { id: engineName; anchors.left: engineRadio.right; anchors.leftMargin: 8; textFormat: Text.PlainText; text: parent.parent.parent.modelData.title || parent.parent.parent.modelData.name; color: parent.parent.parent.usable ? root.fg : root.dim; font.family: root.ff; font.pixelSize: Style.font.body }
                   Text { anchors.right: engineAction.visible ? engineAction.left : parent.right; anchors.rightMargin: engineAction.visible ? 8 : 0; anchors.verticalCenter: parent.verticalCenter
                     text: { var d = parent.parent.parent
                             if (d.failing) return "Not working"
                             return d.ready ? "● Ready" : "" }
-                    color: { var d = parent.parent.parent; return d.failing ? Color.urgent : d.ready ? Color.accent : root.dim }
+                    color: { var d = parent.parent.parent; return d.failing ? Commons.Color.urgent : d.ready ? Commons.Color.accent : root.dim }
                     font.family: root.ff; font.pixelSize: Style.font.caption
                   }
                   InlineAction {
@@ -997,18 +998,18 @@ Panel {
                             if (d.failing && d.modelData.install) return "Repair"
                             if (d.failing) return "Retry"
                             return "Install" }
-                    color: Color.accent; font.family: root.ff; font.pixelSize: Style.font.caption
+                    color: Commons.Color.accent; font.family: root.ff; font.pixelSize: Style.font.caption
                     onTriggered: parent.parent.parent.activateAction()
                   }
                 }
                 InlineAction {
                   anchors.right: parent.right
                   visible: root.canUninstall(parent.parent.modelData)
-                  text: "󰆴"; Accessible.name: "Uninstall"; color: hovered || activeFocus ? Color.urgent : root.dim; font.family: root.ff; font.pixelSize: Style.font.caption
+                  text: "󰆴"; Accessible.name: "Uninstall"; color: hovered || activeFocus ? Commons.Color.urgent : root.dim; font.family: root.ff; font.pixelSize: Style.font.caption
                   onTriggered: root.ocrConfirmUninstall = parent.parent.modelData.name
                 }
                 Text { width: parent.width; wrapMode: Text.WordWrap; textFormat: Text.PlainText; text: parent.parent.modelData.desc || ""; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
-                Text { visible: parent.parent.failing; width: parent.width; wrapMode: Text.WordWrap; text: "Installed, but it could not read the test image. Press Test to try again."; color: Color.urgent; font.family: root.ff; font.pixelSize: Style.font.caption }
+                Text { visible: parent.parent.failing; width: parent.width; wrapMode: Text.WordWrap; text: "Installed, but it could not read the test image. Press Test to try again."; color: Commons.Color.urgent; font.family: root.ff; font.pixelSize: Style.font.caption }
               }
               MouseArea { anchors.fill: parent; enabled: parent.usable; z: 0; cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor; onClicked: parent.activateRow() }
             }
@@ -1039,7 +1040,7 @@ Panel {
             visible: controller.setupStarting || controller.setupJob.status === "running" || controller.setupJob.status === "starting" || controller.setupJob.status === "error"
             textFormat: Text.PlainText
             text: controller.setupStarting ? "Starting setup safely…" : controller.setupJob.message; wrapMode: Text.WordWrap
-            color: controller.setupJob.status === "error" ? Color.urgent : root.dim
+            color: controller.setupJob.status === "error" ? Commons.Color.urgent : root.dim
             font.family: root.ff; font.pixelSize: Style.font.caption
           }
           Item {
@@ -1102,7 +1103,7 @@ Panel {
                 readonly property bool active: root.languageIsActive(modelData.value)
                 width: langChip.implicitWidth + 18; height: 24; radius: 4
                 color: active ? root.tint(0.16) : "transparent"
-                border.width: 1; border.color: activeFocus ? Color.accent : (active ? root.tint(0.5) : Color.popups.border)
+                border.width: 1; border.color: activeFocus ? Commons.Color.accent : (active ? root.tint(0.5) : Commons.Color.popups.border)
                 activeFocusOnTab: true
                 Accessible.role: Accessible.CheckBox
                 Accessible.name: modelData.label || modelData.value
@@ -1112,7 +1113,7 @@ Panel {
                 Keys.onReturnPressed: root.toggleLanguage(modelData.value)
                 Keys.onEnterPressed: root.toggleLanguage(modelData.value)
                 Text { id: langChip; anchors.centerIn: parent; textFormat: Text.PlainText; text: parent.modelData.label || parent.modelData.value
-                       color: parent.active ? Color.accent : root.dim
+                       color: parent.active ? Commons.Color.accent : root.dim
                        font.family: root.ff; font.pixelSize: Style.font.caption }
                 MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor
                             onClicked: root.toggleLanguage(parent.modelData.value) }
@@ -1152,7 +1153,7 @@ Panel {
               readonly property bool installable: (controller.info.ocr?.engine || "tesseract") === "tesseract"
               InlineAction { anchors.right: parent.right; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter
                      text: !parent.installable ? "not downloaded" : parent.busy ? "Installing…" : "󰇚 Install"
-                     color: parent.installable ? Color.accent : root.dim; font.family: root.ff; font.pixelSize: Style.font.caption
+                     color: parent.installable ? Commons.Color.accent : root.dim; font.family: root.ff; font.pixelSize: Style.font.caption
                      enabled: parent.installable && !parent.busy
                      onTriggered: controller.installLanguage(parent.modelData.value) }
             }
@@ -1173,8 +1174,8 @@ Panel {
                     : root.realConflicts.length > 0 ? "Needs attention"
                     : root.adoptableCount > 0 ? "Written by hand"
                     : "Not set up"
-              color: controller.bindings.installed ? Color.accent
-                     : root.realConflicts.length > 0 ? Color.urgent
+              color: controller.bindings.installed ? Commons.Color.accent
+                     : root.realConflicts.length > 0 ? Commons.Color.urgent
                      : (root.adoptableCount > 0 ? root.fg : root.dim)
               font.family: root.ff; font.pixelSize: Style.font.caption
             }
@@ -1193,14 +1194,14 @@ Panel {
               width: controller.bindings.installed ? (parent.width - 8)/2 : parent.width
               text: controller.bindings.installed ? "Apply changes"
                     : (root.adoptableCount > 0 ? "Take over these shortcuts" : "Set up shortcuts")
-              bordered: true; focusable: true; foreground: Color.accent
+              bordered: true; focusable: true; foreground: Commons.Color.accent
               enabled: controller.bindings.canInstall !== false
               onClicked: controller.installBindings()
             }
             Button {
               width: (parent.width - 8)/2
               visible: controller.bindings.installed
-              text: "Remove shortcuts"; bordered: true; focusable: true; foreground: Color.urgent
+              text: "Remove shortcuts"; bordered: true; focusable: true; foreground: Commons.Color.urgent
               onClicked: controller.removeBindings()
             }
           }
@@ -1210,19 +1211,19 @@ Panel {
             text: "These shortcuts already work; they were written by hand rather than by this panel. Taking them over lets you change them here. Nothing is duplicated."
             color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption
           }
-          Text { width: parent.width; visible: controller.bindings.legacy === true; wrapMode: Text.WordWrap; text: "These shortcuts still point at the plugin's old location from before it was renamed. Apply changes to update them."; color: Color.urgent; font.family: root.ff; font.pixelSize: Style.font.caption }
+          Text { width: parent.width; visible: controller.bindings.legacy === true; wrapMode: Text.WordWrap; text: "These shortcuts still point at the plugin's old location from before it was renamed. Apply changes to update them."; color: Commons.Color.urgent; font.family: root.ff; font.pixelSize: Style.font.caption }
           Text { width: parent.width; wrapMode: Text.WordWrap; text: "Only the marked omarchy-tts-local block in bindings.lua is managed. Every write is backed up and rolled back if Hyprland reports an error."; color: root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
-          Text { width: parent.width; visible: root.realConflicts.length > 0; wrapMode: Text.WordWrap; text: "Choose different shortcuts for: " + root.realConflicts.join(", "); color: Color.urgent; font.family: root.ff; font.pixelSize: Style.font.caption }
+          Text { width: parent.width; visible: root.realConflicts.length > 0; wrapMode: Text.WordWrap; text: "Choose different shortcuts for: " + root.realConflicts.join(", "); color: Commons.Color.urgent; font.family: root.ff; font.pixelSize: Style.font.caption }
         }
 
         Rectangle {
-          width: parent.width; height: captureColumn.implicitHeight + 16; radius: 7; visible: root.captureAction !== ""; color: Color.background; border.width: 1; border.color: Color.accent
+          width: parent.width; height: captureColumn.implicitHeight + 16; radius: 7; visible: root.captureAction !== ""; color: Commons.Color.background; border.width: 1; border.color: Commons.Color.accent
           Column { id: captureColumn; anchors.fill: parent; anchors.margins: 8; spacing: 6
             Text { text: "Press the new shortcut for “" + root.captureAction + "”"; color: root.fg; font.family: root.ff; font.pixelSize: Style.font.body }
-            Text { text: root.capturedChord || "Waiting for keys…"; color: Color.accent; font.family: root.ff; font.pixelSize: Style.font.subtitle }
+            Text { text: root.capturedChord || "Waiting for keys…"; color: Commons.Color.accent; font.family: root.ff; font.pixelSize: Style.font.subtitle }
             Row { spacing: 8
               Button { text: "Cancel"; bordered: true; focusable: true; onClicked: { root.captureAction = ""; root.capturedChord = "" } }
-              Button { text: "Use shortcut"; bordered: true; focusable: true; enabled: root.capturedChord !== ""; foreground: Color.accent; onClicked: { controller.setBinding(root.captureAction, root.capturedChord); root.captureAction = ""; root.capturedChord = "" } }
+              Button { text: "Use shortcut"; bordered: true; focusable: true; enabled: root.capturedChord !== ""; foreground: Commons.Color.accent; onClicked: { controller.setBinding(root.captureAction, root.capturedChord); root.captureAction = ""; root.capturedChord = "" } }
             }
           }
         }
@@ -1237,10 +1238,10 @@ Panel {
           }
           Row { width: parent.width; spacing: 8
             TextField { id: sampleField; width: parent.width - testButton.width - 8; text: root.sampleText; maximumLength: 4096; foreground: root.fg; selectByMouse: true; onTextChanged: root.sampleText = text; onEditingFinished: controller.setConfig(".ui.sampleText", text) }
-            Button { id: testButton; width: 96; text: controller.speaking ? "Stop" : "Speak"; iconText: controller.speaking ? "󰓛" : "󰐊"; bordered: true; focusable: true; foreground: controller.speaking ? Color.urgent : root.fg; accent: controller.speaking ? Color.urgent : Color.accent; onClicked: controller.speaking ? controller.stop() : controller.speak(root.sampleText) }
+            Button { id: testButton; width: 96; text: controller.speaking ? "Stop" : "Speak"; iconText: controller.speaking ? "󰓛" : "󰐊"; bordered: true; focusable: true; foreground: controller.speaking ? Commons.Color.urgent : root.fg; accent: controller.speaking ? Commons.Color.urgent : Commons.Color.accent; onClicked: controller.speaking ? controller.stop() : controller.speak(root.sampleText) }
           }
-          Text { width: parent.width; elide: Text.ElideRight; textFormat: Text.PlainText; text: (controller.speaking ? "● Active · " : "") + ((root.activeProvider ? (root.activeProvider.title || root.activeProvider.name) : controller.info.provider) || "") + (root.activeProvider && root.activeProvider.device ? " · " + root.activeProvider.device.toUpperCase() : "") + (controller.info.voice ? " · " + root.activeVoiceLabel() : "") + (root.rateSupported ? " · " + root.rateValue.toFixed(2) + "×" : "") + (controller.info.maxChars > 0 ? " · ≤" + controller.info.maxChars + " chars" : ""); color: controller.speaking ? Color.accent : root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
-          Text { width: parent.width; visible: controller.error !== ""; textFormat: Text.PlainText; text: controller.error; wrapMode: Text.WordWrap; color: Color.urgent; font.family: root.ff; font.pixelSize: Style.font.caption }
+          Text { width: parent.width; elide: Text.ElideRight; textFormat: Text.PlainText; text: (controller.speaking ? "● Active · " : "") + ((root.activeProvider ? (root.activeProvider.title || root.activeProvider.name) : controller.info.provider) || "") + (root.activeProvider && root.activeProvider.device ? " · " + root.activeProvider.device.toUpperCase() : "") + (controller.info.voice ? " · " + root.activeVoiceLabel() : "") + (root.rateSupported ? " · " + root.rateValue.toFixed(2) + "×" : "") + (controller.info.maxChars > 0 ? " · ≤" + controller.info.maxChars + " chars" : ""); color: controller.speaking ? Commons.Color.accent : root.dim; font.family: root.ff; font.pixelSize: Style.font.caption }
+          Text { width: parent.width; visible: controller.error !== ""; textFormat: Text.PlainText; text: controller.error; wrapMode: Text.WordWrap; color: Commons.Color.urgent; font.family: root.ff; font.pixelSize: Style.font.caption }
         }
       }
       }
